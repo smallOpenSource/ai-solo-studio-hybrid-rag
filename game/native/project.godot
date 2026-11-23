@@ -1,0 +1,24 @@
+; Engine configuration file.
+; Aether Scourge — data-driven native client (US-8).
+; Godot 4.3-stable. Loads all 6 game/data files and runs a minimal playable scene.
+
+config_version=5
+
+[application]
+
+config/name="Aether Scourge"
+config/description="US-8 data-driven native client: loads ALL 6 game/data files (meta/enemies/weapons/waves/upgrades/balance), schema-validates them, and composes a minimal playable survivor-like scene. Headless mode prints load+validation+scene-init proof and quits via --quit-after."
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.3")
+config/icon="res://icon.svg"
+
+[debug]
+
+# Print to stdout/stderr in exported (release) builds too, so the headless
+# .exe smoke run can be observed without a debugger attached.
+file_logging/enable_file_logging=false
+
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=360

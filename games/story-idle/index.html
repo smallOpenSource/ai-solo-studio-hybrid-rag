@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>별빛 마을 — Story Idle</title>
+<style>
+  html, body { margin: 0; background: #10131f; color: #e6e9f5; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존·intrinsic 480×360 상한)·더블탭 줌/300ms 지연 차단 */
+  #game { display: block; margin: 16px auto; max-width: 96vw; height: auto; background: #0a0d18; border: 2px solid #6c7bff; image-rendering: pixelated; touch-action: manipulation; }
+  p { text-align: center; color: #8b91b5; margin: 8px 16px; font-size: 13px; }
+  /* 서사 비트(AC3): 자원 임계 도달 시 해금된 비트 텍스트가 여기 렌더(상태게이트+렌더노출). */
+  #beat { color: #e7c98b; min-height: 18px; font-style: italic; }
+  #beat:empty { display: none; }
+  #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #10131f; color: #e6e9f5; border: 1px solid #555; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+<canvas id="game" width="480" height="360"></canvas>
+<p>채집 영역을 누르면 자원이 쌓이고, "생성기 건설"로 자동 생성률(rate)이 늘어납니다. 방치(자동 틱)는 rate 만큼 자원을 모읍니다.</p>
+<!-- 서사 비트(AC3): 자원이 임계를 넘으면 해금된 마을 이야기 한 줄이 여기 렌더(창발 게이트). -->
+<p id="beat" aria-live="polite"></p>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단·코어 미편집·기존 API 만) ──────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.22, noteDur: 0.2,
+    bgm: [392, 523, 587, 523, 440, 587, 659, 587],            // G C D C · A D E D (잔잔·성장)
+    sfx: function (au) {
+      return {
+        gather: function () { au.tone(587, 0.06, "triangle", 0.4); },                 // 채집
+        build:  function () { au.chord([392, 659], 0.12, "square", 0.5, 80); },       // 생성기 건설
+        beat:   function () { au.chord([523, 659, 784], 0.34, "triangle", 0.45, 120); }, // 서사 비트 해금
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; } };
+
+  // ── 결정론 상태 (RNG 없음·외부 의존 0·wall-clock 비의존) ─────────────────────
+  // 계약 = vault/specs/story-idle.md(handoff 브리프 acceptance_criteria)와 1:1.
+  // state_shape: resource,rate,generators,beat,beatsShown · init: resource=0 rate=1 generators=0 beat=0
+  var state = { resource: 0, rate: 1, generators: 0, beat: 0, beatsShown: [] };
+
+  var GEN_COST = 10;                       // brief buy: cost=10(고정·결정론·clicker 동형)
+  var NARRATIVE_THRESHOLD = [20, 60, 140]; // brief beat: thresholds=[20,60,140](자원 임계 서사 게이트)
+  var BEAT_TEXT = [                         // 임계 i 도달 시 해금되는 마을 서사 한 줄(창발 노출)
+    "별빛 마을에 첫 등불이 켜졌다.",
+    "이주민들이 모여 광장을 세운다.",
+    "마을은 마침내 하나의 도시로 깨어난다."
+  ];
+
+  window.__state = state;                  // 테스트훅(헤드리스 상태 단언·R2 명명)
+  window.__constants = { GEN_COST: GEN_COST, NARRATIVE_THRESHOLD: NARRATIVE_THRESHOLD.slice() }; // brief↔게임 drift 교차검증
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var beatEl = document.getElementById("beat");
+  var GATHER_AREA = { x: 20, y: 96, w: 300, h: 244 };
+  var BUILD_BTN = { x: 340, y: 150, w: 120, h: 60 };
+
+  // 서사 게이트(AC3): 자원이 임계를 넘으면 beat 해금(창발·monotonic·direct-set 아님).
+  //   while 루프로 한 번에 여러 임계 통과 가능. 자원 소비로 임계 아래로 내려가도 beat 미회귀
+  //   (현재자원 거울 아님 — 진행=서사 의미). beatsShown.length === beat 불변.
+  function revealBeats() {
+    while (state.beat < NARRATIVE_THRESHOLD.length &&
+           state.resource >= NARRATIVE_THRESHOLD[state.beat]) {
+      state.beatsShown.push(BEAT_TEXT[state.beat]);
+      state.beat += 1;
+      A.play("beat");
+    }
+  }
+
+  function doClick() {                      // 수동 채집(AC: click): resource+=1(rate 무관·부트스트랩)
+    A.play("gather");
+    state.resource += 1;
+    revealBeats();
+    render();
+  }
+
+  function doTick(n) {                      // 논리 틱(AC4 방치): resource+=rate*n(wall-clock 아님·재실행 동일)
+    var k = n | 0;
+    if (k <= 0) return;
+    state.resource += state.rate * k;
+    revealBeats();
+    render();
+  }
+
+  function buyGenerator() {                 // [CORE] 생성기 구매(AC2): resource-=cost AND rate+=1 AND generators+=1
+    if (state.resource < GEN_COST) return false;
+    state.resource -= GEN_COST;
+    state.rate += 1;
+    state.generators += 1;
+    A.play("build");
+    revealBeats();                          // 구매 후 재평가(보통 자원 감소라 미발화)
+    render();
+    return true;
+  }
+
+  function resetGame() {                    // AC: resetGame — init 복원(같은 객체 변이·훅 참조 보전)
+    state.resource = 0; state.rate = 1; state.generators = 0;
+    state.beat = 0; state.beatsShown = [];
+    render();
+  }
+
+  // 헤드리스 테스트 API — Canvas 실입력과 **동일 로직**(QA가 page.evaluate 로 구동·우회 아님).
+  window.__click = doClick;
+  window.__tick = doTick;
+  window.__buyGenerator = buyGenerator;
+  window.__resetGame = resetGame;
+
+  // ── 라이브 방치 루프(setInterval 고정스텝=__tick(1)·dt/now 누산 없음·결정론 값) ───────
+  //   라이브 렌더도 반드시 동일 __tick 경유(별도 wall-clock 물리 금지). 헤드리스 결정론을 위해
+  //   __stopIdle 로 자동 타이머 동결 후 __tick(n) 수동 스텝(라이브 캐던스만 타이머·값은 고정 +rate).
+  var idleTimer = setInterval(function () { doTick(1); }, 1000);
+  window.__stopIdle = function () { if (idleTimer !== null) { clearInterval(idleTimer); idleTimer = null; } };
+  window.__startIdle = function () { if (idleTimer === null) idleTimer = setInterval(function () { doTick(1); }, 1000); };
+
+  function inRect(x, y, r) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+
+  // Pointer Events = 마우스·펜·터치 단일 경로. ★CSS 스케일 보정: 캔버스가 max-width 로 축소되면
+  // rect.width≠canvas.width → (client-rect)에 비율(canvas/rect)을 곱해야 내부 좌표가 맞다(clicker 동형).
+  canvas.addEventListener("pointerdown", function (e) {
+    A.unlock();                                               // 첫 제스처서 오디오 unlock(autoplay 정책)
+    var rect = canvas.getBoundingClientRect();
+    var sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+    var x = (e.clientX - rect.left) * sx, y = (e.clientY - rect.top) * sy;
+    if (inRect(x, y, BUILD_BTN)) buyGenerator();
+    else if (inRect(x, y, GATHER_AREA)) doClick();
+  });
+
+  function render() {
+    ctx.fillStyle = "#0a0d18"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 채집 영역
+    ctx.fillStyle = "#161b30"; ctx.fillRect(GATHER_AREA.x, GATHER_AREA.y, GATHER_AREA.w, GATHER_AREA.h);
+    ctx.fillStyle = "#6c7bff"; ctx.font = "20px monospace";
+    ctx.fillText("자원 채집", GATHER_AREA.x + 90, GATHER_AREA.y + 128);
+
+    // 생성기 건설 버튼(자원 충분 시 활성색)
+    ctx.fillStyle = state.resource >= GEN_COST ? "#4fd6a0" : "#33443e";
+    ctx.fillRect(BUILD_BTN.x, BUILD_BTN.y, BUILD_BTN.w, BUILD_BTN.h);
+    ctx.fillStyle = "#0a0d18"; ctx.font = "12px monospace";
+    ctx.fillText("생성기 건설", BUILD_BTN.x + 14, BUILD_BTN.y + 28);
+    ctx.fillText("(" + GEN_COST + " 자원)", BUILD_BTN.x + 18, BUILD_BTN.y + 46);
+
+    // HUD
+    ctx.fillStyle = "#e6e9f5"; ctx.font = "14px monospace";
+    ctx.fillText("자원(resource): " + state.resource, 20, 30);
+    ctx.fillText("생성률(rate): " + state.rate, 20, 52);
+    ctx.fillText("생성기: " + state.generators, 20, 74);
+    ctx.fillText("서사(beat): " + state.beat + "/" + NARRATIVE_THRESHOLD.length, 300, 30);
+    if (state.beat < NARRATIVE_THRESHOLD.length) {
+      ctx.fillStyle = "#8b91b5"; ctx.font = "11px monospace";
+      ctx.fillText("다음 비트: " + NARRATIVE_THRESHOLD[state.beat] + " 자원", 300, 52);
+    }
+
+    // 서사 비트 DOM 렌더 소비(AC3: 해금된 최신 비트 텍스트 노출)
+    if (beatEl) beatEl.textContent = state.beatsShown.length ? state.beatsShown[state.beatsShown.length - 1] : "";
+  }
+
+  render();
+
+  // 뮤트 버튼: 첫 탭=사운드 켜기(unlock)·이후=뮤트 토글(clicker 동형).
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+앞에서 설계한 적 수치를 game/data/enemies.json 파일로 기록해라. game_data_write 도구를 호출하되 path는 "data/enemies.json", content는 아래 형태의 JSON 객체로 만들어라:
+
+{
+  "enemies": [
+    { "id": "<문자열>", "name": "<문자열>", "hp": <수치 0 초과>, "speed": <수치 0 초과>, "damage": <수치 0 이상>, "spawnWeight": <수치 0 초과>, "behavior": "chase|swarm|ranged|charger" }
+  ]
+}
+
+enemies 배열은 최소 3개, 각 id는 고유해야 한다. behavior는 chase·swarm·ranged·charger 중 하나여야 한다. 이 적 id들은 뒤의 waves.json에서 참조되므로 정확히 기록해라.

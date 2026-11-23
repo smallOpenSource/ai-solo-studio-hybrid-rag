@@ -1,0 +1,20 @@
+# SR/renewal §9.1 — WorkAdventure `uploader` 브릭 (rootless Podman Quadlet·결정① 비수정).
+# ★AGPL §13: upstream prebuilt 비수정(로컬 build 0). HTTP(8080)→2820 외부 노출(포트모델·결정③·
+#   PathPrefix /uploader 제거). REDIS_HOST=redis 내부. AWS/S3 는 선택(env 부재 시 로컬 폴백).
+[Unit]
+Description=AIGS WorkAdventure uploader (file upload·unmodified upstream)
+Wants=aigs-wa-network.service aigs-wa-redis.service
+After=aigs-wa-network.service aigs-wa-redis.service
+
+[Container]
+Image=docker.io/thecodingmachine/workadventure-uploader:v1.31.7
+Network=aigs-wa.network
+PublishPort=2820:8080
+EnvironmentFile=%h/.config/containers/systemd/wa-uploader.env
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

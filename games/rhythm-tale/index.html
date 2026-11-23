@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>리듬 테일 — 재회의 멜로디</title>
+<style>
+  html, body { margin: 0; background: #0d0b1a; color: #e7e2f5; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존)·캔버스는 touch-action:none 으로 탭 제스처 소유(페이지 스크롤/줌 차단) */
+  #game { display: block; margin: 14px auto; max-width: 96vw; height: auto; background: #07060f; border: 2px solid #8a6cff; image-rendering: pixelated; touch-action: none; }
+  p { text-align: center; color: #9a93b8; margin: 6px 16px; font-size: 13px; }
+  /* R3: 섹션 서사장면(③ 연출) 노출 노드 — render() 가 state.scene 을 textContent 로 렌더 소비(vestigial 차단). */
+  #scene { text-align: center; color: #b9b0e0; margin: 6px 16px; font-size: 13px; min-height: 18px; }
+  #scene:empty { opacity: 0; }
+  #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #0d0b1a; color: #e7e2f5; border: 1px solid #8a6cff; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+<canvas id="game" width="480" height="640"></canvas>
+<p>키 <b>D · F · J · K</b> 또는 레인 <b>탭</b>으로 판정선에서 노트를 맞추세요. 연주 정확도가 엔딩을 가릅니다.</p>
+<p id="scene" aria-live="polite"></p>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 상수(브리프 vault/specs/rhythm-tale.md 계약과 1:1·하네스가 파싱해 교차검증) ──────────
+  var LANES = 4;
+  var KEYS = ["d", "f", "j", "k"];                 // 레인 0..3 = D/F/J/K
+  var LANE_FREQ = [392.0, 493.88, 587.33, 698.46]; // G B D F (4음 모티프 — 적중이 멜로디가 됨)
+  var LANE_COLOR = ["#5ad1ff", "#8a6cff", "#ff6cae", "#ffd86c"];
+  var PERFECT_MS = 45;                             // judge: |Δ|<=45ms → Perfect
+  var GOOD_MS = 90;                                // judge: 45<|Δ|<=90ms → Good (그 외 Miss)
+  var MISS_ASSOC_MS = 250;                         // 이 범위 밖 탭은 노트 미소비(stray)·내부는 Miss로 소비
+  var THRESHOLD = 0.70;                            // ending: accuracy>=0.70 → A, 미만 → B
+  var NOTE_COUNT = 40;                             // [30,60] 내
+  var NOTE_GAP = 1.5;                              // 노트 간격(초)
+  var NOTE_START = 2.0;                            // 첫 노트 시각(초·곡-상대)
+  var SONG_TAIL = 3.0;                             // 마지막 노트 후 여운
+  var LEAD_TIME = 2.0;                             // 노트가 스폰→판정선까지 낙하하는 시간(초)
+  var W = 480, H = 640;
+  var JUDGE_Y = 548;                              // 판정선 Y(노트가 비트시각에 도달)
+  var LANE_W = W / LANES;
+  var SONG_DURATION = +(NOTE_START + (NOTE_COUNT - 1) * NOTE_GAP + SONG_TAIL).toFixed(2);
+
+  // ── R2 가산: 섹션·다층편곡·다중엔딩 상수(브리프 vault/specs/rhythm-tale.md 계약과 1:1·하네스 drift 교차검증) ──
+  var SECTION_COUNT = 3;            // 3섹션(노트를 시간 구간으로 분할·rng 비소비 파생)
+  var SECTION_THRESHOLD = 0.70;    // 섹션 클리어 바(perSection accuracy >= ) → finale 티어 결정
+  var BASS_COMBO = 8;              // __activeLayers: combo>=8 → 베이스 성부 가산
+  var PERC_COMBO = 16;             // __activeLayers: combo>=16 → 퍼커션 성부 가산
+  // ★R3 가산: 섹션별 음정변환(반음·인덱스 파생·rng 비소비·섹션 distinct → same-lane cross-section freq 상이). 모티프 수=섹션 수(천장).
+  var SECTION_PITCH = [0, 5, 7];   // 1악장 토닉·2악장 +4도·3악장 +5도(테마형 편곡 — __sectionTheme/__plannedVoices 가 소비)
+
+  // ── 서사 장면(③ 톤 — 연주 결과가 엔딩 장면 톤을 바꿈) ───────────────────────────────
+  var INTRO_SCENE = { id: "intro", tone: "calm", title: "재회의 멜로디",
+    text: ["오래전 약속한 무대.", "이 한 곡으로 그날의 마음을 전한다.", "연주가 끝을 결정한다."] };
+  var ENDING_SCENES = {
+    A: { id: "endA", tone: "hope", title: "엔딩 A — 닿은 마음",
+      text: ["흔들림 없는 연주가 그에게 가닿았다.", "두 사람은 다시 같은 박자 위에 선다."] },
+    B: { id: "endB", tone: "melancholy", title: "엔딩 B — 엇갈린 박자",
+      text: ["박자는 자꾸 비껴갔고, 말은 늦었다.", "여운만 남기고 무대의 불이 꺼진다."] },
+  };
+  // ── R2: 섹션 서사장면(③ 톤 — 섹션 전이 시 노출·audioParams waveform 변조·섹션마다 음색 상이) ──
+  var SECTION_SCENES = [
+    { id: "sec0", tone: "calm", title: "1악장 — 만남",
+      text: ["조용히 첫 음을 누른다.", "기억이 손끝에서 깨어난다."] },
+    { id: "sec1", tone: "tense", title: "2악장 — 어긋남",
+      text: ["박자가 빨라지고 마음이 흔들린다.", "엇갈린 말이 음 사이로 스민다."] },
+    { id: "sec2", tone: "stirring", title: "3악장 — 결심",
+      text: ["마지막 소절, 모든 것을 건다.", "이 연주가 끝을 정한다."] },
+  ];
+
+  // ── 오디오(절차적 합성·_audio.js 공유·미로드 시 no-op 비차단) ────────────────────────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.26, noteDur: 0.18, bgm: [],          // bgm 비움 — 곡 멜로디는 scheduleTone 으로 직접 스케줄
+    sfx: function (au) {
+      return {
+        // 적중 음색은 audioParams(연주·서사 state 함수)로 변조 — ③ 파라메트릭 통합 실연결.
+        hit: function () { var p = audioParams(); au.tone(p.rootFreq, 0.10, p.waveform, 0.4); },
+        miss: function () { au.noise(0.08, 0.18); },
+      };
+    },
+  }) : { unlock: fn0, play: fn0, toggleMute: function () { return false; }, isUnlocked: function () { return false; },
+         now: function () { return 0; }, playTone: fn0, scheduleTone: fn0 };
+  function fn0() {}
+
+  // ── 곡 차트(결정론 — 시드 고정·재현). 같은 레인 연속 회피로 같은-레인 간격 >= 3s(탭 연관 안전). ──
+  function mulberry32(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function buildSong() {
+    var rng = mulberry32(0x1357), out = [], lastLane = -1;
+    for (var i = 0; i < NOTE_COUNT; i++) {
+      var lane = Math.floor(rng() * LANES);
+      if (lane === lastLane) lane = (lane + 1) % LANES;   // 즉시 반복 회피
+      lastLane = lane;
+      // ★section = 시간 구간 파생(인덱스 i 만 의존·rng 비소비 → times/lanes·시드 0x1357 산출 골든 불변)
+      var section = Math.min(SECTION_COUNT - 1, Math.floor(i * SECTION_COUNT / NOTE_COUNT));
+      out.push({ id: i, time: +(NOTE_START + i * NOTE_GAP).toFixed(3), lane: lane, section: section, judged: false });
+    }
+    return out;
+  }
+  var notes = buildSong();
+  function noteById(id) { return (id >= 0 && id < notes.length) ? notes[id] : null; }
+
+  // ── R2 가산: 섹션별 창발 카운트 컨테이너(직접세팅 금지·applyJudgment 에서만 누적·accuracy 카운트에서 창발) ──
+  function newPerSection() {
+    var arr = [];
+    for (var s = 0; s < SECTION_COUNT; s++) arr.push({ perfect: 0, good: 0, miss: 0, accuracy: 0, notesJudged: 0 });
+    return arr;
+  }
+
+  // ── 결정론 상태 + 테스트 훅 ───────────────────────────────────────────────────────
+  var SONG_META = { name: INTRO_SCENE.title, noteCount: NOTE_COUNT, duration: SONG_DURATION, bpm: 40 };
+  var state = {
+    song: SONG_META, scene: INTRO_SCENE, scenesShown: 1,   // init: 인트로 장면 1개 노출
+    score: 0, accuracy: 0, combo: 0, maxCombo: 0,
+    notesJudged: 0, perfect: 0, good: 0, miss: 0,
+    ending: null, phase: "intro", taps: 0, lastJudgment: null, lastTapLane: -1,
+    // ── R2 가산(기존 필드 전부 보존) ──
+    section: 0, perSection: newPerSection(), sectionsCleared: 0, finale: null, sectionThreshold: SECTION_THRESHOLD,
+  };
+  window.__state = state;
+  var songStart = 0;       // phase→play 시점의 마스터 클럭(곡 시작). 곡-상대시각 = now()-songStart.
+  var playbackActive = false;                  // ★실 재생(startPlayback) 여부 — autoPlay 시뮬(rearm 전용)과 구분(라이브 성부 가산 게이트).
+  var liveLayersScheduled = { bass: false, perc: false }; // ★MAJOR-2: 콤보 상승 시 성부별 1회 추가 스케줄 추적(잔여 노트).
+
+  // ── 순수/결정론 핵심 함수 ─────────────────────────────────────────────────────────
+  // ★순수: 인자(id, atSongTime)에만 의존. 내부 now()/currentTime read 금지 → 동일인자=동일출력.
+  //   y(t) = JUDGE_Y·(1 - (note.time - t)/LEAD_TIME). t=note.time → JUDGE_Y(판정선 도달).
+  function noteScreenY(id, atSongTime) {
+    var nt = noteById(id);
+    if (!nt) return NaN;
+    return JUDGE_Y * (1 - (nt.time - atSongTime) / LEAD_TIME);
+  }
+  // ★판정: deltaMs 의 순수 함수(상수만 참조). 경계 ±45/±90 에서 라벨 전이.
+  function judge(deltaMs) {
+    var a = Math.abs(deltaMs);
+    if (a <= PERFECT_MS) return "Perfect";
+    if (a <= GOOD_MS) return "Good";
+    return "Miss";
+  }
+  // ★엔딩: accuracy 의 순수 임계 함수. 직접세팅 금지 — 항상 이 함수로만 결정.
+  function resolveEnding(accuracy) { return accuracy >= THRESHOLD ? "A" : "B"; }
+
+  // ★다중엔딩(순수): 클리어 섹션수(perSection accuracy>=SECTION_THRESHOLD)의 함수. 직접세팅 금지·finale 은 이 함수로만.
+  function resolveFinale(perSection) {
+    var cleared = 0;
+    for (var i = 0; i < perSection.length; i++) {
+      if (perSection[i] && perSection[i].accuracy >= SECTION_THRESHOLD) cleared += 1;
+    }
+    if (cleared >= SECTION_COUNT) return "radiant";   // 전 섹션 클리어
+    if (cleared >= 1) return "bittersweet";           // 1~2 섹션
+    return "faded";                                    // 0 섹션
+  }
+  // ★서사 톤 → 음색(waveform) 매핑(순수·기존 hope/melancholy 보존·섹션 톤 가산·"필터" 미도입).
+  function toneToWaveform(tone) {
+    return tone === "hope" ? "sine"
+         : tone === "melancholy" ? "sawtooth"
+         : tone === "tense" ? "square"
+         : tone === "stirring" ? "sawtooth"
+         : "triangle";   // calm 및 미정의(기존 기본)
+  }
+  // ★R3 섹션 테마(순수·인덱스 파생·rng 비소비·섹션 distinct): 섹션 i → {pitchShift(반음), tone}.
+  //   음정변환(transpose)+톤을 한 함수로 정의 → __plannedVoices 가 per-note freq/음색을 이 테마로 bake(③ 테마형 편곡).
+  //   인덱스 파생이라 buildSong rng 비소비(GOLDEN times/lanes 불변). PITCH+TIMBRE 가 이 함수와 등치(하네스 hollow 차단).
+  function sectionTheme(i) {
+    var s = Math.max(0, Math.min(SECTION_COUNT - 1, i | 0));
+    return { pitchShift: SECTION_PITCH[s], tone: SECTION_SCENES[s].tone };
+  }
+  // ★반음 transpose(순수): freq·2^(semis/12). __plannedVoices 와 하네스가 동일 rounding 으로 PITCH 등치 재현.
+  function transpose(freq, semis) { return +(freq * Math.pow(2, semis / 12)).toFixed(3); }
+  // ★활성 레이어 집합(순수): 콤보의 함수. melody 기본 · combo>=BASS_COMBO 베이스 · >=PERC_COMBO 퍼커션.
+  function activeLayers(st) {
+    var s = st || state, combo = s.combo || 0, layers = ["melody"];
+    if (combo >= BASS_COMBO) layers.push("bass");
+    if (combo >= PERC_COMBO) layers.push("perc");
+    return layers;
+  }
+  // ★R3 활성 트랙(순수): 활성 성부(=activeLayers) 각각에 현 섹션 테마 태그(motifId=sectionTheme(section)).
+  //   voice 집합 === activeLayers(결합 브리지·R2 AC7 비회귀)·motifId = 섹션 테마(섹션 distinct·다중트랙 테마 구조).
+  function activeTracks(st) {
+    var s = st || state, motif = sectionTheme(s.section || 0);
+    return activeLayers(s).map(function (v) { return { voice: v, motifId: motif }; });
+  }
+  // ★편곡 성부 스케줄(순수·단일소스): scheduleMelody/escalateLiveLayers 가 이 함수를 iterate 해 실 스케줄(우회 금지).
+  //   성부집합 === activeLayers(st)(결합 불변식·R2 AC7 비회귀). ★R3: melody/bass freq·melody 음색을 노트별 섹션
+  //   테마(sectionTheme(n.section))로 per-note bake — freq=LANE_FREQ[lane]에 테마 transpose 적용·음색=섹션 톤
+  //   waveform(테마 live hollow 0·라이브 재스케줄 불요). 성부집합·성부 카운터 불변(테마=freq/type 변조만·신규 성부 0).
+  function plannedVoices(st) {
+    var s = st || state, layers = activeLayers(s);
+    var hasBass = layers.indexOf("bass") >= 0, hasPerc = layers.indexOf("perc") >= 0;
+    var ev = [];
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i], th = sectionTheme(n.section);               // ★per-note 섹션 테마(음정변환+톤)
+      var mFreq = transpose(LANE_FREQ[n.lane], th.pitchShift);      // ★melody freq = lane 베이스에 테마 transpose 적용(테마 실배선·raw=hollow→RED)
+      var mWave = toneToWaveform(th.tone);                          // ★melody 음색 = 섹션 톤 per-note(③ 실배선·live 정합)
+      ev.push({ voice: "melody", section: n.section, freq: mFreq, time: n.time, dur: 0.16, type: mWave, peak: 0.12 });
+      if (hasBass) ev.push({ voice: "bass", section: n.section, freq: +(mFreq / 2).toFixed(3), time: n.time, dur: 0.22, type: "sine", peak: 0.10 });
+      if (hasPerc) ev.push({ voice: "perc", section: n.section, freq: 1320, time: n.time, dur: 0.05, type: "square", peak: 0.06 });
+    }
+    return ev;
+  }
+
+  // ★섹션 전이 게이트: 현재 섹션의 전 노트가 판정되면 1회 발화 — perSection 확정·section++·서사장면.
+  //   phase 유지·미rearm(전곡 autoPlay→finishSong 백본 비파괴). 카운트 창발만 소비(직접세팅 0).
+  function maybeSectionTransition(note) {
+    var sec = note.section;
+    if (sec !== state.section) return;             // 현재 섹션 노트만 전이 유발
+    for (var i = 0; i < notes.length; i++) {
+      if (notes[i].section === sec && !notes[i].judged) return;  // 아직 섹션 미완 → 전이 보류
+    }
+    if (state.perSection[sec].accuracy >= SECTION_THRESHOLD) state.sectionsCleared += 1;  // 섹션 클리어 누적
+    if (sec < SECTION_COUNT - 1) {
+      state.section = sec + 1;
+      showScene(SECTION_SCENES[sec + 1]);          // 다음 섹션 서사장면(scenesShown++)
+      sceneFlashUntil = (A.now ? A.now() : 0) + 2.6; // ★MINOR-2b: 전이 직후 ~2.6s 서사장면 텍스트를 플레이 화면에 라이브 표시(vestigial-echo 제거)
+    }
+  }
+
+  // ── 판정 적용(accuracy 는 여기서 카운트로부터 창발 — 절대 직접세팅 금지) ──────────────
+  function applyJudgment(note, label) {
+    note.judged = true;
+    state.notesJudged += 1;
+    if (label === "Perfect") { state.perfect += 1; state.combo += 1; state.score += 300; A.play("hit"); }
+    else if (label === "Good") { state.good += 1; state.combo += 1; state.score += 100; A.play("hit"); }
+    else { state.miss += 1; state.combo = 0; A.play("miss"); }
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+    if (playbackActive) escalateLiveLayers();      // ★MAJOR-2: 라이브 재생서 콤보가 베이스(≥8)/퍼커션(≥16) 경계를 넘으면 잔여 노트에 성부 가산(live 발화·autoPlay 시뮬 제외)
+    state.accuracy = state.notesJudged ? (state.perfect + state.good) / state.notesJudged : 0; // 창발
+    state.lastJudgment = label;
+    // ── R2: 섹션별 창발 카운트(직접세팅 금지·카운트에서 accuracy 창발) ──
+    var ps = state.perSection[note.section];
+    if (label === "Perfect") ps.perfect += 1;
+    else if (label === "Good") ps.good += 1;
+    else ps.miss += 1;
+    ps.notesJudged += 1;
+    ps.accuracy = ps.notesJudged ? (ps.perfect + ps.good) / ps.notesJudged : 0;  // 창발
+    maybeSectionTransition(note);                  // 섹션 전 노트 판정 시 전이(phase 유지·미rearm)
+    if (state.phase === "play" && state.notesJudged === NOTE_COUNT) finishSong(); // 전 노트 판정 → 종료
+  }
+
+  // 탭/키 단일 판정 경로: 레인의 최근접 미판정 노트를 judge() 경유로 판정.
+  function tapLane(lane, atSongTime) {
+    state.taps += 1;
+    state.lastTapLane = lane;                       // C2: hit-test+CSS 스케일이 x→레인을 옳게 매핑했는지 단언용
+    var best = null, bestAbs = Infinity;
+    for (var i = 0; i < notes.length; i++) {
+      var nt = notes[i];
+      if (nt.lane !== lane || nt.judged) continue;
+      var d = Math.abs((atSongTime - nt.time) * 1000);
+      if (d < bestAbs) { bestAbs = d; best = nt; }
+    }
+    if (best && bestAbs <= MISS_ASSOC_MS) {
+      var deltaMs = (atSongTime - best.time) * 1000;
+      var label = judge(deltaMs);                 // ★judge() 경유(창발 보장)
+      applyJudgment(best, label);
+      flash(lane, label);
+      return label;
+    }
+    state.lastJudgment = "—";                      // 노트 없는 stray 탭(미소비)
+    return "—";
+  }
+
+  function rearm() {                                // 곡 재무장(retry/autoPlay 공용)
+    for (var i = 0; i < notes.length; i++) notes[i].judged = false;
+    state.score = 0; state.combo = 0; state.maxCombo = 0; state.notesJudged = 0;
+    state.perfect = 0; state.good = 0; state.miss = 0; state.accuracy = 0;
+    state.ending = null; state.lastJudgment = null; state.phase = "play";
+    // ── R2 가산 리셋(섹션 상태) ──
+    state.section = 0; state.perSection = newPerSection(); state.sectionsCleared = 0; state.finale = null;
+    // ── 라이브 성부 추적 리셋(autoPlay=비라이브·startPlayback 이 직후 playbackActive 를 true 로 승격) ──
+    playbackActive = false; liveLayersScheduled = { bass: false, perc: false };
+  }
+  function showScene(sc) { state.scene = sc; state.scenesShown += 1; }
+  function finishSong() {
+    if (state.phase !== "play") return;            // 1회만(autoPlay 의 40번째 노트 종료와 trailing 호출 중복 방지)
+    state.ending = resolveEnding(state.accuracy);  // ★ending 은 창발 accuracy 의 함수(직접세팅 금지·기존 보존)
+    state.finale = resolveFinale(state.perSection);// ★finale 은 창발 perSection 의 함수(직접세팅 금지·별도 필드 가산)
+    state.phase = "result";
+    showScene(ENDING_SCENES[state.ending]);        // 엔딩 장면 톤 = 연주 결과(③ 연결·기존 ending 기반 보존)
+  }
+
+  // ★자동연주: judge() 경유 보정탭으로 비율 a 만 적중(나머지 Miss) → accuracy 창발 → ending 결정.
+  //   accuracy/ending 직접세팅 절대 금지. 같은 차트·같은 judge 경로에서 오직 탭 타이밍만 a 로 달라진다.
+  function autoPlay(a) {
+    a = Math.max(0, Math.min(1, a));
+    rearm();
+    var n = notes.length;
+    var hits = Math.round(a * n);
+    var ordered = notes.slice().sort(function (x, y) { return x.time - y.time; });
+    for (var i = 0; i < ordered.length; i++) {
+      // 정확히 hits 개를 균등 분산(텔레스코핑 합 = hits). hit=온비트(Δ0·Perfect)/miss=200ms 오프(>90·Miss).
+      var hit = Math.floor((i + 1) * hits / n) > Math.floor(i * hits / n);
+      var offsetS = hit ? 0 : 0.2;
+      tapLane(ordered[i].lane, ordered[i].time + offsetS); // 실제 judge 경로 구동
+    }
+    finishSong();
+    return { ending: state.ending, accuracy: state.accuracy, notesJudged: state.notesJudged,
+             perfect: state.perfect, good: state.good, miss: state.miss };
+  }
+  function retry() { state.scene = INTRO_SCENE; startPlayback(); } // ★MAJOR-1: result→play 를 startSong 과 동일 타이밍 setup(songStart 재설정+멜로디 재스케줄) 공유 → 라이브 재연주서 즉시 전곡 auto-miss 미발생·백킹 멜로디 복원. scene 인트로 리셋(음색 대칭)·scenesShown 누적.
+
+  // ★섹션별 자동연주(judge 경유 보정탭): 섹션 i 노트를 비율 ratios[i] 만 적중 → perSection[i] 창발 → finale.
+  //   섹션 성과만 달라도 finale 가 갈린다(accuracy/finale 직접세팅 0·autoPlay 와 동형 보정탭·judge 경로 구동).
+  function autoPlayPerSection(ratios) {
+    ratios = ratios || [];
+    rearm();
+    for (var s = 0; s < SECTION_COUNT; s++) {
+      var a = Math.max(0, Math.min(1, ratios[s] != null ? ratios[s] : 0));
+      var secNotes = notes.filter(function (n) { return n.section === s; })
+                          .sort(function (x, y) { return x.time - y.time; });
+      var n = secNotes.length, hits = Math.round(a * n);
+      for (var i = 0; i < secNotes.length; i++) {
+        var hit = Math.floor((i + 1) * hits / n) > Math.floor(i * hits / n);  // 정확히 hits 개 균등 분산
+        tapLane(secNotes[i].lane, secNotes[i].time + (hit ? 0 : 0.2));        // judge 경로(온비트/200ms 오프)
+      }
+    }
+    finishSong();
+    return { finale: state.finale, sectionsCleared: state.sectionsCleared,
+             perSection: state.perSection.map(function (p) {
+               return { perfect: p.perfect, good: p.good, miss: p.miss, accuracy: p.accuracy, notesJudged: p.notesJudged }; }) };
+  }
+  // ★섹션 셀렉트(softlock 회피·연습/리플레이): 섹션 i 로 점프·전 노트 재무장·phase play·해당 섹션 톤 장면.
+  function selectSection(i) {
+    i = Math.max(0, Math.min(SECTION_COUNT - 1, i | 0));
+    state.scene = SECTION_SCENES[i];                // 섹션 톤 장면(스케줄 전 설정 — 멜로디 음색이 섹션 톤 반영·audioParams waveform)
+    startPlayback();                                // ★MINOR-1b: startSong 타이밍 setup 공유(songStart 재설정+멜로디 스케줄) → 라이브 진입서 정상 재생(즉시 auto-miss 미발생·rearm 만 호출하던 잠복 stale 해소)
+    state.section = i;                              // 현재 섹션 = i(전이는 i 부터 진행·rearm 이 0 으로 리셋한 뒤 덮어씀)
+    return i;
+  }
+
+  function startSong() {                            // 인트로→플레이(실 제스처)
+    A.unlock();
+    startPlayback();
+  }
+  // ★공유 타이밍 setup(startSong·retry·selectSection 공용): songStart 재설정 + 재무장 + 멜로디(combo=0) 스케줄.
+  //   라이브 재생 마킹(playbackActive) → 콤보 상승 시 베이스/퍼커션 가산(escalateLiveLayers) 활성. autoPlay 는 이 경로 미사용(clock 불요·rearm 전용).
+  function startPlayback() {
+    songStart = A.now ? A.now() : 0;                // ★MAJOR-1: 곡 시작 클럭 재설정(stale songStart → 즉시 전곡 auto-miss 차단)
+    rearm();                                        // 카운트/노트/콤보=0·playbackActive=false·liveLayersScheduled 리셋
+    playbackActive = true;                          // 실 재생(라이브 성부 가산 활성)
+    scheduleMelody();                               // combo=0 → 멜로디 단성(베이스/퍼커션은 콤보 상승 시 escalateLiveLayers 가 가산)
+  }
+  function scheduleMelody() {                        // ★다층 편곡을 절대 ctx 시각에 스케줄(헤드리스=no-op·성부 카운터는 발화)
+    if (!A.scheduleTone) return;
+    var voices = plannedVoices(state);               // ★단일소스 iterate(우회 금지) — 성부집합 === __activeLayers(state)
+    for (var i = 0; i < voices.length; i++) {
+      var v = voices[i];
+      A.scheduleTone(v.freq, songStart + v.time, v.dur, v.type, v.peak, v.voice);  // voice → _audio.js 성부 카운터(결합 교차검증)
+    }
+  }
+  // ★MAJOR-2 라이브 다층 발화: 콤보가 베이스(≥8)/퍼커션(≥16) 경계를 넘으면 잔여(미경과) 노트에 해당 성부를 추가 스케줄.
+  //   plannedVoices(현 state) 단일소스 iterate(우회 금지·결합 불변식 보존) — 새로 활성된 성부의 미래 노트만 1회 가산.
+  function escalateLiveLayers() {
+    if (!A.scheduleTone) return;
+    if (liveLayersScheduled.bass && liveLayersScheduled.perc) return;  // 전 성부 가산 완료(조기 종료)
+    var layers = activeLayers(state);                 // 단일소스: combo → 성부 집합(베이스 ≥8·퍼커션 ≥16)
+    if (layers.indexOf("bass") >= 0) scheduleLiveLayer("bass");
+    if (layers.indexOf("perc") >= 0) scheduleLiveLayer("perc");
+  }
+  function scheduleLiveLayer(layer) {
+    if (liveLayersScheduled[layer]) return;           // 성부당 1회(중복 스케줄 방지)
+    liveLayersScheduled[layer] = true;
+    var voices = plannedVoices(state), relNow = songRelTime();  // ★단일소스(plannedVoices)에서 해당 성부 이벤트 파생(우회 금지)
+    for (var i = 0; i < voices.length; i++) {
+      var v = voices[i];
+      if (v.voice !== layer || v.time < relNow) continue;       // 해당 성부 & 잔여(판정선 미경과) 노트만
+      A.scheduleTone(v.freq, songStart + v.time, v.dur, v.type, v.peak, v.voice);
+    }
+  }
+  function songRelTime() { return (A.now ? A.now() : 0) - songStart; }
+
+  // ── ③ 파라메트릭: 합성/시각 파라미터 = 연주·서사 state 의 순수 함수(결정론) ─────────────
+  function audioParams(st) {
+    var s = st || state, base = 220;
+    return {
+      rootFreq: +(base * Math.pow(2, ((s.combo || 0) % 12) / 12)).toFixed(3), // 콤보 → 음정 상승(hit-sfx 실배선)
+      waveform: toneToWaveform(s.scene && s.scene.tone), // 서사 톤(섹션/엔딩) → 음색(hit-sfx + 멜로디 성부 실배선·필터 미도입)
+    };
+  }
+  function visualParams() {
+    var s = state, acc = Math.max(0, Math.min(1, s.accuracy));
+    return {
+      hue: Math.round(120 * acc),                  // 정확도 → 색상(붉음→초록·렌더 실배선)
+      tone: s.scene ? s.scene.tone : "calm",       // 서사 톤(AC6 narrative-state 단언 참조)
+      glow: +Math.min(1, s.combo / 20).toFixed(3), // 콤보 → 글로우(렌더 실배선)
+    };
+  }
+
+  // ── 테스트 훅(Canvas 실입력과 동일 로직·QA page.evaluate 구동) ────────────────────────
+  window.__audioTime = function () { return A.now ? A.now() : 0; }; // = ctx.currentTime(마스터 클럭)
+  window.__songTime = songRelTime;                                 // 곡-상대 시각(= __audioTime - songStart)
+  window.__songStart = function () { return songStart; };          // ★MAJOR-1 사각폐색: retry/selectSection 의 songStart 재설정(A.now() 기준) 단언용
+  window.__songNotes = function () {
+    return notes.map(function (n) { return { id: n.id, time: n.time, lane: n.lane, section: n.section, judged: n.judged }; });
+  };
+  window.__noteScreenY = noteScreenY;     // 순수(id, atSongTime)
+  window.__tapLane = tapLane;             // judge() 경유
+  window.__autoPlay = autoPlay;           // 보정탭·창발
+  window.__retry = retry;
+  window.__start = startSong;
+  window.__judge = judge;                 // 경계 단위 단언용
+  window.__resolveEnding = resolveEnding; // 임계 단위 단언용
+  window.__audioParams = audioParams;
+  window.__visualParams = visualParams;
+  // ── R2 가산 훅(기존 훅 전부 보존) ──
+  window.__activeLayers = function (st) { return activeLayers(st); };        // 순수(콤보→레이어 집합)
+  window.__plannedVoices = function (st) { return plannedVoices(st); };      // 순수(=scheduleMelody iterate·단일소스·결합 불변식)
+  window.__resolveFinale = function (ps) { return resolveFinale(ps || state.perSection); }; // 순수(perSection→finale)
+  window.__autoPlayPerSection = autoPlayPerSection;  // 섹션별 보정탭·창발 finale(직접세팅 0)
+  window.__selectSection = selectSection;            // 섹션 점프·재무장(softlock 회피)
+  window.__sectionNotes = function () {              // 섹션별 노트 그룹(차트 골든·섹션 노트수)
+    var groups = [];
+    for (var s = 0; s < SECTION_COUNT; s++) groups.push([]);
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i];
+      groups[n.section].push({ id: n.id, time: n.time, lane: n.lane, section: n.section });
+    }
+    return groups;
+  };
+  window.__scheduleMelody = scheduleMelody;          // 결합 카운터 구동용(저/고 콤보 state → 성부 호출)
+  // ── R3 가산 훅(기존 훅 전부 보존) ──
+  window.__sectionTheme = function (i) { return sectionTheme(i); };          // 순수(섹션→{pitchShift,tone}·인덱스 파생·섹션 distinct)
+  window.__activeTracks = function (st) { return activeTracks(st); };        // 순수(voice집합===activeLayers + motifId=sectionTheme)
+  window.__toneToWaveform = function (t) { return toneToWaveform(t); };      // 톤→음색(TIMBRE 등치 기대값 재현용)
+  window.__sectionScenes = function () { return SECTION_SCENES.map(function (s) { return { id: s.id, tone: s.tone, title: s.title, text: s.text.slice() }; }); };
+  window.__sceneDomText = function (sc) { return sceneDomText(sc); };        // #scene 렌더 텍스트 단일 출처(렌더 소비 단언용)
+  window.__sceneFlashUntil = function () { return sceneFlashUntil; };        // [SMOKE] 연출 오버레이 만료(실클럭)
+  window.__constants = { PERFECT_MS: PERFECT_MS, GOOD_MS: GOOD_MS, THRESHOLD: THRESHOLD,
+    LEAD_TIME: LEAD_TIME, JUDGE_Y: JUDGE_Y, NOTE_COUNT: NOTE_COUNT, MISS_ASSOC_MS: MISS_ASSOC_MS,
+    NOTE_START: NOTE_START, NOTE_GAP: NOTE_GAP, SONG_DURATION: SONG_DURATION,
+    SECTION_COUNT: SECTION_COUNT, SECTION_THRESHOLD: SECTION_THRESHOLD, BASS_COMBO: BASS_COMBO, PERC_COMBO: PERC_COMBO,
+    LANE_FREQ: LANE_FREQ.slice(), SECTION_PITCH: SECTION_PITCH.slice() };
+
+  // ── 입력: 키(D/F/J/K) + 캔버스 포인터(레인 탭·CSS 스케일 보정) ───────────────────────
+  var canvas = document.getElementById("game");
+  var g = canvas.getContext("2d");
+  function liveTap(lane) {                          // 실시간 입력 → 곡-상대 시각으로 judge 경유
+    A.unlock();
+    if (state.phase !== "play") return;
+    tapLane(lane, songRelTime());
+  }
+  window.addEventListener("keydown", function (e) {
+    var k = (e.key || "").toLowerCase();
+    var lane = KEYS.indexOf(k);
+    if (lane === -1) {
+      if (state.phase === "result" && (k === "r" || k === " " || k === "enter")) { e.preventDefault(); retry(); }
+      return;
+    }
+    e.preventDefault();
+    if (state.phase === "intro") { startSong(); return; } // 첫 제스처=시작
+    if (state.phase === "result") { retry(); return; }
+    liveTap(lane);
+  });
+  // Pointer = 마우스+터치 단일 경로 + CSS 스케일 보정(축소 시 비율 곱·naive 차감 금지).
+  canvas.addEventListener("pointerdown", function (e) {
+    var rect = canvas.getBoundingClientRect();
+    var sx = canvas.width / rect.width;
+    var x = (e.clientX - rect.left) * sx;
+    var lane = Math.max(0, Math.min(LANES - 1, Math.floor(x / LANE_W)));
+    if (state.phase === "intro") { startSong(); return; }
+    if (state.phase === "result") { retry(); return; }
+    liveTap(lane);
+  });
+  // 뮤트 버튼: 첫 탭=사운드 켜기(unlock)·이후=뮤트 토글.
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+
+  // ── 렌더(다크·monospace·canvas2D). 파라미터(visual)가 톤/글로우에 반영(③). ────────────
+  var flashLane = -1, flashLabel = "", flashUntil = 0;
+  var sceneFlashUntil = 0;                          // ★MINOR-2b: 섹션 전이 서사장면(SECTION_SCENES) 라이브 오버레이 만료(마스터 클럭).
+  function flash(lane, label) { flashLane = lane; flashLabel = label; flashUntil = (A.now ? A.now() : 0) + 0.25; }
+  function hsl(h, s, l) { return "hsl(" + h + "," + s + "%," + l + "%)"; }
+  // ★R3 풀 ③ 연출: 활성 서사장면(state.scene)을 질의가능 DOM(#scene)에 render() 가 단일 동기화(렌더 소비·vestigial 차단·memoir AC8 동형).
+  var sceneEl = document.getElementById("scene");
+  function sceneDomText(sc) { return sc ? (sc.title + " — " + sc.text.join(" ")) : ""; }
+  function syncSceneDom() { if (sceneEl) sceneEl.textContent = sceneDomText(state.scene); }
+
+  function render() {
+    syncSceneDom();                                // ★R3: 섹션/엔딩 서사장면을 #scene DOM 에 렌더 소비(연출 vestigial 차단·memoir AC8 동형)
+    var vp = visualParams();
+    // 배경(정확도 색상 은은하게)
+    g.fillStyle = "#07060f"; g.fillRect(0, 0, W, H);
+    g.fillStyle = hsl(250 - vp.hue, 40, 6 + vp.glow * 6); g.fillRect(0, 0, W, H);
+
+    // 레인 분리선
+    for (var L = 0; L <= LANES; L++) {
+      g.strokeStyle = "rgba(138,108,255,0.18)"; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(L * LANE_W, 0); g.lineTo(L * LANE_W, H); g.stroke();
+    }
+    // 판정선
+    g.strokeStyle = hsl(120 - vp.hue, 70, 60); g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, JUDGE_Y); g.lineTo(W, JUDGE_Y); g.stroke();
+
+    if (state.phase === "play") {
+      var t = songRelTime();
+      for (var ai = 0; ai < notes.length; ai++) {   // 라이브 auto-miss: 판정선을 지나친 미탭 노트(헤드리스=클럭 0이라 무동작)
+        var an = notes[ai];
+        if (!an.judged && t > an.time + GOOD_MS / 1000 + 0.03) applyJudgment(an, "Miss");
+      }
+      for (var i = 0; i < notes.length; i++) {
+        var n = notes[i];
+        if (n.judged) continue;
+        var y = noteScreenY(n.id, t);
+        if (y < -30 || y > H + 30) continue;
+        var cx = n.lane * LANE_W + LANE_W / 2;
+        g.fillStyle = LANE_COLOR[n.lane];
+        roundRect(cx - LANE_W / 2 + 10, y - 14, LANE_W - 20, 28, 7); g.fill();
+      }
+      // 레인 키 라벨 + 적중 플래시
+      for (var L2 = 0; L2 < LANES; L2++) {
+        var fx = L2 * LANE_W + LANE_W / 2;
+        var active = (A.now ? A.now() : 0) < flashUntil && flashLane === L2;
+        g.fillStyle = active ? "#fff" : "rgba(231,226,245,0.5)";
+        g.font = "bold 20px monospace";
+        g.fillText(KEYS[L2].toUpperCase(), fx - 7, JUDGE_Y + 34);
+      }
+      if ((A.now ? A.now() : 0) < flashUntil) {
+        g.fillStyle = flashLabel === "Perfect" ? "#7CFFB0" : flashLabel === "Good" ? "#ffd86c" : "#ff6c6c";
+        g.font = "bold 26px monospace";
+        g.fillText(flashLabel, flashLane * LANE_W + LANE_W / 2 - 34, JUDGE_Y - 24);
+      }
+      drawHud();
+      if ((A.now ? A.now() : 0) < sceneFlashUntil) drawSceneBanner(state.scene);  // ★MINOR-2b: 섹션 서사장면 라이브 오버레이(전이 직후 짧게)
+    } else if (state.phase === "intro") {
+      drawScene(INTRO_SCENE, "D / F / J / K 또는 탭으로 시작");
+    } else { // result
+      drawResult();
+    }
+    requestAnimationFrame(render);
+  }
+
+  function drawHud() {
+    g.fillStyle = "#e7e2f5"; g.font = "16px monospace";
+    g.fillText("SCORE " + state.score, 14, 28);
+    g.fillText("COMBO " + state.combo, 14, 50);
+    g.fillText("ACC " + (state.accuracy * 100).toFixed(1) + "%", 330, 28);
+    g.fillText("NOTE " + state.notesJudged + "/" + NOTE_COUNT, 330, 50);
+    g.fillStyle = "#9a93b8"; g.font = "13px monospace";
+    g.fillText("SEC " + (state.section + 1) + "/" + SECTION_COUNT + " · CLR " + state.sectionsCleared, 150, 28);
+  }
+  function drawScene(sc, hint) {
+    g.fillStyle = sc.tone === "hope" ? "#7CFFB0" : sc.tone === "melancholy" ? "#b3a6ff" : "#e7e2f5";
+    g.font = "bold 24px monospace"; g.fillText(sc.title, 40, 220);
+    g.fillStyle = "#cfc8e8"; g.font = "15px monospace";
+    for (var i = 0; i < sc.text.length; i++) g.fillText(sc.text[i], 40, 270 + i * 28);
+    if (hint) { g.fillStyle = "#9a93b8"; g.font = "14px monospace"; g.fillText(hint, 40, 270 + sc.text.length * 28 + 24); }
+  }
+  // ★MINOR-2b: 섹션 전이 서사장면 라이브 오버레이(상단 반투명 배너 — 노트 하이웨이/HUD 비가림·플레이 중 짧게 표시).
+  function drawSceneBanner(sc) {
+    if (!sc) return;
+    g.fillStyle = "rgba(7,6,15,0.82)"; g.fillRect(0, 66, W, 92);
+    g.strokeStyle = "rgba(138,108,255,0.5)"; g.lineWidth = 1; g.strokeRect(0, 66, W, 92);
+    g.fillStyle = sc.tone === "tense" ? "#ff9ccb" : sc.tone === "stirring" ? "#ffd86c" : "#8ad6ff";
+    g.font = "bold 19px monospace"; g.fillText(sc.title, 36, 96);
+    g.fillStyle = "#cfc8e8"; g.font = "14px monospace";
+    for (var i = 0; i < sc.text.length; i++) g.fillText(sc.text[i], 36, 122 + i * 21);
+  }
+  function drawResult() {
+    var sc = state.scene;
+    g.fillStyle = sc.tone === "hope" ? "#7CFFB0" : "#b3a6ff";
+    g.font = "bold 24px monospace"; g.fillText(sc.title, 40, 150);
+    g.fillStyle = "#cfc8e8"; g.font = "15px monospace";
+    for (var i = 0; i < sc.text.length; i++) g.fillText(sc.text[i], 40, 196 + i * 26);
+    g.fillStyle = "#e7e2f5"; g.font = "18px monospace";
+    var baseY = 196 + sc.text.length * 26 + 30;
+    g.fillText("점수 " + state.score, 40, baseY);
+    g.fillText("정확도 " + (state.accuracy * 100).toFixed(1) + "%", 40, baseY + 30);
+    g.fillStyle = "#cfc8e8"; g.font = "15px monospace";
+    g.fillText("Perfect " + state.perfect + " · Good " + state.good + " · Miss " + state.miss, 40, baseY + 56);
+    g.fillStyle = "#e7e2f5"; g.font = "18px monospace";
+    g.fillText("최대 콤보 " + state.maxCombo, 40, baseY + 84);
+    g.fillStyle = "#cfc8e8"; g.font = "14px monospace";
+    g.fillText("피날레 " + (state.finale || "—") + " · 섹션 클리어 " + state.sectionsCleared + "/" + SECTION_COUNT, 40, baseY + 108);
+    g.fillStyle = "#9a93b8"; g.font = "14px monospace";
+    g.fillText("R / Space / 탭 으로 다시 연주", 40, baseY + 140);
+  }
+  function roundRect(x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

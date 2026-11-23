@@ -1,0 +1,21 @@
+# SR/renewal §9.1 — WorkAdventure `map-storage` 브릭 (rootless Podman Quadlet·결정① 비수정).
+# ★AGPL §13: upstream prebuilt 비수정(로컬 build 0). HTTP(3000)→2818 외부 노출(포트모델·결정③·
+#   PathPrefix /map-storage 제거). 내부 gRPC(50053)는 비노출. PATH_PREFIX 제거(루트 서빙).
+[Unit]
+Description=AIGS WorkAdventure map-storage (maps·unmodified upstream)
+Wants=aigs-wa-network.service aigs-wa-back.service
+After=aigs-wa-network.service aigs-wa-back.service
+
+[Container]
+Image=docker.io/thecodingmachine/workadventure-map-storage:v1.31.7
+Network=aigs-wa.network
+PublishPort=2818:3000
+EnvironmentFile=%h/.config/containers/systemd/wa-map-storage.env
+Volume=aigs-wa-maps.volume:/maps
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

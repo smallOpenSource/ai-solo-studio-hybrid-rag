@@ -1,0 +1,100 @@
+# endpoint.yaml — 값이 아니라 환경변수 이름을 참조 (키 평문 금지)
+llm:
+  base_url_env: BENCH_API_URL
+  api_key_env: BENCH_API_KEY
+
+# web — Phase 4a 웹서버 바인드·정적 경로 (코드 하드코딩 0)
+# host/port는 PoC라 평문(제약 #3). 정적 경로는 프로젝트 루트 기준 상대.
+# 외부 접근 포트는 환경에 맞게 지정 → 0.0.0.0 바인드.
+web:
+  host: 0.0.0.0
+  port: 33006
+  # 프론트 빌드 산출물(web/dist). 아직 없으면 비어 있어도 마운트만 한다.
+  static_dist: web/dist
+  # 직원 이미지(이미지 토글 플레이스홀더). URL 접두사 /work 로 노출.
+  static_work: work
+  ssl_certfile: /etc/studio/ssl/studio.example.com/fullchain.pem
+  ssl_keyfile: /etc/studio/ssl/studio.example.com/privkey.pem
+  # 로그인(세션 인증) — 암호는 .env(password_env가 가리키는 환경변수)에서만 읽는다.
+  # 값 하드코딩 0(기존 *_env 규약 일관). 인메모리 opaque 세션(서명/secret 불요).
+  auth:
+    password_env: LOGIN_PASSWORD
+    cookie_name: omc_session
+    ttl_seconds: 86400
+
+# discord — Phase 4b 어댑터(별도 워커 프로세스, one_man_corp-discord env).
+# 값(토큰·채널)은 .env 환경변수 이름으로만 참조(키 평문 0, 제약 #4).
+# 게시 토글 3개는 mapping.event_to_message 의 toggles 와 1:1 고정(결정 D / §9-6):
+#   post_text   : TEXT_MESSAGE 게시 여부(기본 OFF — 직원 발화 채널 폭주 절제)
+#   post_tool   : TOOL_CALL_START/RESULT 게시 여부(기본 OFF — 고빈도 노이즈)
+#   post_gating : NODE_FAILED(gating) 게시 여부(기본 OFF — 차단 기록 노이즈)
+discord:
+  bot_token_env: DISCORD_BOT_TOKEN
+  channel_id_env: DISCORD_CHANNEL_ID
+  web_base_url_env: WEB_BASE_URL
+  # ★P7 SSE 관측성: web_server 재연결 연속 실패가 이 횟수에 도달할 때마다 ERROR 경보로 격상
+  # (봇은 max_retries=None로 자가치유 무한재시도 지속 — 이 값은 '영구다운 가시화' 임계일 뿐).
+  sse_reconnect_alert_threshold: 5
+  # DC-1: 직원 발화·인바운드 응답 채널 게시 ON(양방향 대화 회신 경로의 전제).
+  # post_tool/post_gating은 노이즈라 OFF 유지(원하면 토글).
+  post_text: true
+  post_tool: false
+  post_gating: false
+  # ★멀티-직원 @멘션(N봇): 직원별 봇 로스터. 토큰 값은 .env(token_env가 가리키는 환경변수)
+  # 에서만 읽는다(키 평문 0). token이 채워진 직원만 활성(점진). primary(=consume_sse)는
+  # 일반/승인/미멘션을 접수. _parse_bot_roster가 읽는다(adapters/discord/bot.py).
+  bots:
+    - { role: secretary,  name: 이수빈, token_env: DISCORD_TOKEN_SECRETARY,  avatar: /assets/nexus/portraits/secretary_neutral.png, primary: true }
+    - { role: pm,         name: 정민준, token_env: DISCORD_TOKEN_PM,         avatar: /assets/nexus/portraits/pm_neutral.png }
+    - { role: ceo,        name: 김도윤, token_env: DISCORD_TOKEN_CEO,        avatar: /assets/nexus/portraits/ceo_neutral.png }
+    - { role: strategist, name: 이서연, token_env: DISCORD_TOKEN_STRATEGIST, avatar: /assets/nexus/portraits/strategist_neutral.png }
+    - { role: cfo,        name: 박지호, token_env: DISCORD_TOKEN_CFO,        avatar: /assets/nexus/portraits/cfo_neutral.png }
+    - { role: legal,      name: 최예린, token_env: DISCORD_TOKEN_LEGAL,      avatar: /assets/nexus/portraits/legal_neutral.png }
+    - { role: planner,    name: 강하은, token_env: DISCORD_TOKEN_PLANNER,    avatar: /assets/nexus/portraits/planner_neutral.png }
+    - { role: hr,         name: 신동현, token_env: DISCORD_TOKEN_HR,         avatar: /assets/nexus/portraits/hr_neutral.png }
+    - { role: data,       name: 윤시우, token_env: DISCORD_TOKEN_DATA,       avatar: /assets/nexus/portraits/data_neutral.png }
+    - { role: accountant, name: 임수아, token_env: DISCORD_TOKEN_ACCOUNTANT, avatar: /assets/nexus/portraits/accountant_neutral.png }
+    - { role: dev,        name: 한지훈, token_env: DISCORD_TOKEN_DEV,        avatar: /assets/nexus/portraits/dev_neutral.png }
+    - { role: devops,     name: 오태경, token_env: DISCORD_TOKEN_DEVOPS,     avatar: /assets/nexus/portraits/devops_neutral.png }
+    - { role: designer,   name: 서유진, token_env: DISCORD_TOKEN_DESIGNER,   avatar: /assets/nexus/portraits/designer_neutral.png }
+    - { role: marketer,   name: 김지원, token_env: DISCORD_TOKEN_MARKETER,   avatar: /assets/nexus/portraits/marketer_neutral.png }
+    - { role: sales,      name: 장현우, token_env: DISCORD_TOKEN_SALES,      avatar: /assets/nexus/portraits/sales_neutral.png }
+    - { role: cs,         name: 문가영, token_env: DISCORD_TOKEN_CS,         avatar: /assets/nexus/portraits/cs_neutral.png }
+
+bge:
+  embedding_url_env: BGE_EMBEDDING_API_URL
+  embedding_key_env: BGE_EMBEDDING_API_KEY
+  embedding_model_env: BGE_EMBEDDING_MODEL
+  rerank_url_env: BGE_RERANK_API_URL
+  rerank_key_env: BGE_RERANK_API_KEY
+
+# knowledge — Phase 2 지식 레이어(Qdrant 임베디드) 설정. 경로·이름만(키 평문 0).
+# Qdrant는 로컬 임베디드 모드(별도 서버 0). path는 프로젝트 루트 기준 상대,
+# 호출부가 절대경로로 변환한다. dim=1024는 bge-m3 dense 벡터 차원(고정).
+knowledge:
+  # SR/renewal §5.2: 임베디드→서버 전환(rootless Podman Qdrant 컨테이너).
+  # 서버 URL = config/ports.json PORT_QDRANT_REST(2811). 디스크-임베디드 경로 제거.
+  qdrant_url: http://127.0.0.1:2811
+  # 컬렉션 이름. 서버 모드 신규 컬렉션(구 one_man_corp_wiki는 .omc/backups/ 비교검증용).
+  collection: knowledge
+  # dense 임베딩 차원(bge-m3, 고정). 컬렉션 생성 시 단언용.
+  dim: 1024
+  # 검색 한 벌 기본값: dense로 넓게 top_n 후보 → 리랭커로 top_k만 추림.
+  top_n: 20
+  top_k: 5
+  # Phase 8 P(옵션 B): cross-env HTTP 검색 서비스 바인드(코드 하드코딩 0).
+  # ★단일 인스턴스(uvicorn --workers 1) — state/qdrant 단일 소유자(동시성 1·H-13).
+  # host/port는 PoC라 localhost 평문. serve_knowledge.sh가 읽는다.
+  service:
+    host: 127.0.0.1
+    port: 8810
+
+# worker — P1 동시성(멀티 OS 프로세스 워커풀·step3 supervisor·비동결).
+# concurrency=동시 워커 슬롯 수. ★머지 기본 1 = 단일워커 동치(claimed_by_slot NULL·기존
+#   경로·즉시 롤백). >1이면 supervisor가 슬롯 워커 N개 기동(state/worker.lock.{0..N-1}).
+#   ★★concurrency:2 라이브 승격·supervisor production 기동은 반드시 사용자 세션 승인(자율 금지).
+# python_exe=워커 자식 exec용 conda env python 절대경로(conda run 회피·제약 #3).
+worker:
+  concurrency: 2
+  poll_interval: 2.0
+  python_exe: /opt/conda/envs/one_man_corp-engine/bin/python

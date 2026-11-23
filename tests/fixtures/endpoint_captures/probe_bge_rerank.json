@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "index": 0,
+      "score": 7.5390777587890625,
+      "document": "Azure is a cloud platform."
+    },
+    {
+      "index": 1,
+      "score": -11.025142669677734,
+      "document": "Bananas are yellow."
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "weapons": [
+    {
+      "damage": 25,
+      "fireRate": 8.0,
+      "flavor": "끊임없이 플라즈마를 분사하는 고속 연사포로, 적을 순식간에 태워버리는 화력 집중 무기입니다.",
+      "id": "W001",
+      "name": "Plasma Repeater",
+      "pierce": 0,
+      "projectiles": 1,
+      "range": 340
+    },
+    {
+      "damage": 15,
+      "fireRate": 2.0,
+      "flavor": "중력을 왜곡시켜 목표에 여러 번의 충격을 가하는 강력한 방해 및 제어 무기입니다.",
+      "id": "W002",
+      "name": "Graviton Disruptor",
+      "pierce": 1,
+      "projectiles": 3,
+      "range": 300
+    }
+  ]
+}

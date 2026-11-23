@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# pre-commit — 동결 파일이 스테이징되면 커밋 차단 (P3 강제장치·로컬 1차 방벽).
+#
+# 동결 목록은 .omc/state/protected_pre.sha 단일 출처에서 동적으로 읽는다(P9가 9→7로
+# 정정해도 추종). .git/hooks는 클론에 전파되지 않으므로 이 훅은 로컬 1차 방벽이고,
+# scripts/verify_freeze.sh(preflight/CI)가 이식 가능한 2차 방벽이다.
+# ★의도된 해동(FREEZE.md 비준 + sha 재생성 + code-review 승인)이면 우회:
+#   git commit --no-verify
+set -u
+ROOT="$(git rev-parse --show-toplevel)"
+SHA_FILE="$ROOT/.omc/state/protected_pre.sha"
+[ -f "$SHA_FILE" ] || exit 0   # 매니페스트 없으면 가드 비활성(통과)
+
+staged="$(git diff --cached --name-only)"
+frozen="$(awk 'NF>=2 {print $2}' "$SHA_FILE")"
+blocked=""
+for path in $frozen; do
+  if printf '%s\n' "$staged" | grep -qxF -- "$path"; then
+    blocked="${blocked}${path}
+"
+  fi
+done
+
+if [ -n "$blocked" ]; then
+  echo "✗ 커밋 차단: 동결(엔진 계약) 파일이 스테이징됨:" >&2
+  printf '    %s\n' $blocked >&2
+  echo "  동결 수정은 .omc/state/FREEZE.md 비준 + code-review 승인이 필요합니다." >&2
+  echo "  의도된 해동이면(책임 하에): git commit --no-verify" >&2
+  exit 1
+fi
+exit 0

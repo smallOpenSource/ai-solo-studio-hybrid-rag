@@ -1,0 +1,9 @@
+# P2.5 provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: p25-clicker-mvp
+brief_sha: 7187ec7b3e83e955f22caf5f5b92d90b873a2f0f
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/p25-clicker-mvp.md
+implemented_by: Claude Code (Owner-initiated session · OD-1=A1 · §7.1)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit보다 선행한다(provenance 시계열).
+  QA(web/scripts/play_clicker_check.mjs)는 AC_SOURCE 브리프를 파싱해 단언을 파생한다(하드코딩 금지).

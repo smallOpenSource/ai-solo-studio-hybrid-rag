@@ -1,0 +1,19 @@
+# SR/renewal §9.1 — WorkAdventure `icon`(iconserver) 브릭 (rootless Podman Quadlet·비수정).
+# ★AGPL §13: upstream prebuilt 비수정(로컬 build 0). HTTP(8080)→2819 외부 노출(포트모델·결정③·
+#   PathPrefix /icon·/lettericons 제거). iconserver 는 WA 부속(WA 소스 아님)·역시 비수정.
+[Unit]
+Description=AIGS WorkAdventure icon server (favicon proxy·unmodified upstream)
+Wants=aigs-wa-network.service
+After=aigs-wa-network.service
+
+[Container]
+Image=docker.io/matthiasluedtke/iconserver:v3.21.0
+Network=aigs-wa.network
+PublishPort=2819:8080
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

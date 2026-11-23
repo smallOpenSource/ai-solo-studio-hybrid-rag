@@ -1,0 +1,57 @@
+{
+  "waves": [
+    {
+      "difficulty": 1.0,
+      "spawn": [
+        {
+          "enemyId": "E001",
+          "rate": 1.2
+        },
+        {
+          "enemyId": "E002",
+          "rate": 0.3
+        }
+      ],
+      "tEnd": 60,
+      "tStart": 0
+    },
+    {
+      "difficulty": 2.5,
+      "spawn": [
+        {
+          "enemyId": "E001",
+          "rate": 4.0
+        },
+        {
+          "enemyId": "E002",
+          "rate": 1.2
+        },
+        {
+          "enemyId": "E003",
+          "rate": 0.3
+        }
+      ],
+      "tEnd": 120,
+      "tStart": 60
+    },
+    {
+      "difficulty": 4.0,
+      "spawn": [
+        {
+          "enemyId": "E001",
+          "rate": 6.0
+        },
+        {
+          "enemyId": "E002",
+          "rate": 2.0
+        },
+        {
+          "enemyId": "E003",
+          "rate": 0.6
+        }
+      ],
+      "tEnd": 180,
+      "tStart": 120
+    }
+  ]
+}

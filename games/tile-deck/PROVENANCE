@@ -1,0 +1,21 @@
+# tile-deck provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: tile-deck
+brief_blob_sha: 71387dd07527bf6f8941b7b64be4131c3de3a76a   # `git hash-object vault/specs/tile-deck.md`(내용 지문)
+brief_sha: PENDING_COMMIT   # 커밋 시점에 오케스트레이터가 brief commit sha 로 확정(게임 commit 선행·provenance 시계열)
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/tile-deck.md
+implemented_by: Claude Code (/all-in-one #3 B2 · #7 tile-deck 첫 슬라이스·MINIMAL · 합의계획 .omc/plans/all-in-one-longlist-12.md §3)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit 보다 선행한다(provenance 시계열·clicker/memoir/story-idle/farewell-ferry 규범).
+  QA(web/scripts/play_tile-deck_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해 단언을 파생한다(하드코딩 금지).
+  단언 값(gridW/gridH=3·base=1·match_bonus=3·target=18·seed=1337·cards=6)은 브리프 acceptance_criteria 에서만 파생되며,
+  게임 코드 상수(window.__constants: GRID_W·GRID_H·CARD_BASE·MATCH_BONUS·TARGET_SCORE·SEED·HAND_SIZE)와 교차검증된다(드리프트 적발).
+  ★핵심 차별 루프(빈틈 직격·비로그라): 시너지가 공간적이고 손패가 설계된 퍼즐 — 로그라이트 없는 공간배치 덱빌더.
+  ★AC2/AC3 [CORE] 결합 불변식: __playCard(cardId,x,y) → 셀 점유 AND boardScore 가 board 인접의 순수 재계산서 창발
+  (= Σ base + 인접 같은타입 edge 당 match_bonus·direct-set forbidden). 같은 카드를 다른 위치에 두면 점수 상이
+  (position-dependent·상수 점수면 RED → 렌더-only/stub theater 차단). score/solved 직접세터(__setScore/__setSolved) 부재.
+  ★AC4 클리어·비로그라 결정론: solved = boardScore>=target(=18·창발) — 고정 손패(mulberry32·draw RNG 없음=설계 레벨)라
+  동일 플레이 → 동일 board(2회 deep-equal). resetGame → 동일 손패 재배분(같은 id/type/순서)·grid 빈상태. gated 경로
+  wall-clock(Date.now/performance.now/requestAnimationFrame) read 0(하네스 grep 강제·렌더는 on-demand).
+  ★provenance 실증: 브리프 AC load-bearing 라인(init/play/synergy/clear/coupling/negative)이 비면 deriveContract 파생 불가 → FAIL.
+  verify 가 정상 brief→PASS(부모) + coupling AC 제거 brief→FAIL(자식 exit≠0) 양 경로를 한 호출로 구동(무하드코딩 실증·done 게이트).

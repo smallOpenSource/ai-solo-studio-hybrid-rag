@@ -1,0 +1,38 @@
+{
+  "provisional": true,
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User said: `/no_think 서울 날씨 알려줘`\n   - `/no_think` is a command to skip the thinking process and provide a direct answer.\n   - The request is in Korean: \"서울 날씨 알려줘\" means \"Tell me the weather in Seoul.\"\n\n2.  **Identify Key Constraints & Requirements:**\n   - I need to provide current weather information for Seoul.\n   - I don't have real-time internet access or live data feeds. My training data cutoff is 2024, and I can't fetch live weather.\n   - I must acknowledge this limitation clearly and politely.\n   - I should suggest how the user can get the information (e.g., check a weather website/app, search online).\n   - Keep it concise as requested by `/no_think`.\n\n3.  **Formulate Response (Internal Refinement):**\n   - Acknowledge the request.\n   - State clearly that I don't have real-time weather data.\n   - Provide a helpful alternative.\n   - Keep it in Korean as requested.\n   - Example: \"실시간 날씨 정보는 제공해 드"
+      }
+    }
+  ],
+  "created": 1780806059,
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "system_fingerprint": "b9544-98d5e8ba8",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 256,
+    "prompt_tokens": 17,
+    "total_tokens": 273,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "id": "chatcmpl-ogbNTCg8zpIygTIJoSRVFnhXHNIoLGx1",
+  "timings": {
+    "cache_n": 0,
+    "prompt_n": 17,
+    "prompt_ms": 100.118,
+    "prompt_per_token_ms": 5.889294117647059,
+    "prompt_per_second": 169.7996364290138,
+    "predicted_n": 256,
+    "predicted_ms": 2966.963,
+    "predicted_per_token_ms": 11.58969921875,
+    "predicted_per_second": 86.2835161746203
+  }
+}

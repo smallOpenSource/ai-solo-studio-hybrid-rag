@@ -1,0 +1,8 @@
+너는 게임 콘텐츠 작가다. 앞 단계에서 읽어온 enemies.json·weapons.json의 각 항목에 붙일 플레이버(설명) 텍스트를 설계해라.
+
+규칙:
+1. 앞에서 읽은 적·무기의 id 하나하나에 대해, 그 id에 1:1로 대응하는 flavor 문장을 정확히 1개씩 만들어라. 새 id를 지어내거나 기존 id를 빠뜨리지 마라.
+2. 각 flavor는 해당 적/무기의 이름·행동(behavior)·역할과 어울리는 짧고 분위기 있는 한 문장으로 쓴다(예: 적 behavior가 swarm이면 무리지어 덮치는 묘사, charger면 돌진하는 묘사).
+3. 플레이버는 설명 텍스트일 뿐이며 hp·speed·damage·fireRate 같은 수치를 바꾸자고 제안하지 마라.
+
+다음 단계가 "id → flavor" 대응을 그대로 enemies.json·weapons.json에 병합해 기록할 수 있도록, 어떤 id에 어떤 flavor를 붙일지 id별로 분명히 적어라.

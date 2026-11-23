@@ -1,0 +1,6 @@
+# SR/renewal §9.1 — map-storage 영속 볼륨(rootless Podman Quadlet). 생성: aigs-wa-maps-volume.service.
+[Unit]
+Description=AIGS WorkAdventure map-storage data volume
+
+[Volume]
+VolumeName=aigs-wa-maps

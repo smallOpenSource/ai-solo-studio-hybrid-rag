@@ -1,0 +1,14 @@
+# P5 provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: p5-slide-puzzle
+brief_sha: e0e5e1463fe3ae36d1cd59661c4d671e358a52fe1fb639d89c4a75a961085164   # sha256(vault/specs/p5-slide-puzzle.md)
+brief_sha_kind: sha256-content        # 파일 내용 sha256(브리프 미커밋 — clicker는 vault commit sha 사용)
+AC_SOURCE: vault/specs/p5-slide-puzzle.md
+implemented_by: Claude Code (Owner-initiated 대화형 세션 · §7.1 HARD · -p/SDK/API 자동호출 0)
+genre: sliding-tile-puzzle (3×3·ADR-0002·clicker 재탕 금지)
+note: |
+  브리프(brief_sha)가 이 게임 구현보다 선행한다(provenance 시계열 — DEV→Claude Code 핸드오프).
+  QA(web/scripts/play_puzzle_check.mjs·별도 reviewer 레인)는 AC_SOURCE 브리프를 orch.handoff.parse_brief
+  로 파싱해 단언을 파생한다(하드코딩 금지·부정 변이 FAIL). harvest(orch.spec_queue)는 task_id 가 commit
+  메시지에 + artifacts_expected 실존 + DoD 4구성 + 시계열로 status=done 을 판정한다(falsifiable).
+  헤드리스 로직 검증(작성 레인): 시드 고정 보드 BFS solvable(20수)·solved false->true 정확히 1회·moves 엄격증가·
+  비인접 이동 no-op·유효 이동 시 tiles 배열 실변경(단일 카운터 stub 불가) 확인됨.

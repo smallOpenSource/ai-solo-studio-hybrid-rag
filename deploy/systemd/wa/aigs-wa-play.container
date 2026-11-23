@@ -1,0 +1,25 @@
+# SR/renewal §9.1 — WorkAdventure `play` 브릭 (rootless Podman Quadlet·결정① 비수정 prebuilt).
+# ★AGPL §13: upstream 공식 prebuilt 이미지를 **비수정** 사용(로컬 build 컨텍스트 0). 소스 fork 0.
+# ★포트모델(결정③): traefik 제거 → 외부는 PublishPort(ports.json PORT_WA_PLAY=2817)로 직접
+#   노출(평문 HTTP·PVE host 터널이 https://studio.example.com:2817 종단). 내부 gRPC(50051)는 비노출.
+# ★버전 핀: 6 브릭 전부 v1.31.7 lockstep(상향 시 동시 bump). 비수정 단언은 verify grep.
+[Unit]
+Description=AIGS WorkAdventure play (front+pusher·unmodified upstream)
+Wants=aigs-wa-network.service aigs-wa-back.service aigs-wa-redis.service
+After=aigs-wa-network.service aigs-wa-back.service aigs-wa-redis.service
+
+[Container]
+Image=docker.io/thecodingmachine/workadventure-play:v1.31.7
+Network=aigs-wa.network
+# §9.2 포트모델: front(3000)→2817 외부 노출. WS(3001)·room-api gRPC(50051)는 내부 전용
+# (traefik sticky cookie/PathPrefix 제거). 외부 입장은 pending Owner(도메인+TLS).
+PublishPort=2817:3000
+# play env(내부↔외부 절대 URL·끝슬래시 제거·시크릿)는 클린-env 파일로만 주입(NODE_ENV 비오염).
+EnvironmentFile=%h/.config/containers/systemd/wa-play.env
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

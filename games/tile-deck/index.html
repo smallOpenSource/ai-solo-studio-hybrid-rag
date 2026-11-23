@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>타일 덱 — 공간배치 덱빌더 퍼즐</title>
+<style>
+  html, body { margin: 0; background: #16121f; color: #e0e0e0; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존)·캔버스는 touch-action:none 으로 탭 소유(페이지 스크롤/줌 차단) */
+  #game { display: block; margin: 16px auto; max-width: 96vw; height: auto; background: #0e0a17; border: 2px solid #c792ea; image-rendering: pixelated; touch-action: none; }
+  p { text-align: center; color: #9b88c2; margin: 8px 16px; font-size: 13px; }
+  #controls { text-align: center; margin: 8px auto 20px; }
+  #reset { font-family: monospace; font-size: 16px; color: #1c1230; background: #c792ea; border: none; border-radius: 6px; padding: 10px 22px; touch-action: manipulation; cursor: pointer; }
+  #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #16121f; color: #e0e0e0; border: 1px solid #c792ea; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+<canvas id="game" width="360" height="470"></canvas>
+<p>손패 카드를 탭해 고른 뒤 빈 칸을 탭해 배치하세요. 같은 종류를 인접시키면 시너지(combo)가 올라갑니다 — 고정 손패로 설계된 퍼즐(랜덤 없음)을 클리어하세요.</p>
+<div id="controls"><button id="reset" type="button">다시 시작</button></div>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단) ──────────────────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.22, noteDur: 0.2,
+    bgm: [440, 0, 554, 0, 659, 0, 587, 0],                    // A _ C# _ E _ D _ (잔잔)
+    sfx: function (au) {
+      return {
+        place: function () { au.tone(392, 0.05, "triangle", 0.5); },
+        combo: function () { au.chord([523, 784], 0.1, "square", 0.5, 80); },
+        solve: function () { au.chord([523, 659, 784, 1047], 0.16, "square", 0.5, 110); },
+        reject: function () { au.noise(0.06, 0.25); },
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; } };
+
+  // ── 결정론 상수 (계약 = vault/specs/tile-deck.md acceptance_criteria 와 1:1·brief 파생) ──
+  var GRID_W = 3;            // brief init: gridW=3
+  var GRID_H = 3;            // brief init: gridH=3
+  var SEED = 1337;           // brief init: seed=1337 (mulberry32 고정 손패·draw RNG 아님)
+  var CARD_BASE = 1;         // brief synergy: base=1 (배치 타일당 기본점)
+  var MATCH_BONUS = 3;       // brief synergy: match_bonus=3 (인접 같은타입 edge 당 보너스)
+  var TARGET_SCORE = 18;     // brief clear: target=18 (= 최대치·설계 배열로만 도달)
+  var HAND_SIZE = 6;         // brief init: cards=6 (설계된 손패 구성 3×F + 3×M)
+
+  // 타입 정의(시각·라벨). 같은 타입끼리 인접 = 매칭(combo). 비로그라 = 고정 구성.
+  var TYPES = {
+    F: { label: "숲", top: "#69d68a", bot: "#2f9c57", ink: "#08311a" },   // Forest
+    M: { label: "산", top: "#9aa7c7", bot: "#5a668a", ink: "#161c2e" },   // Mountain
+  };
+  // 설계된 손패 구성(고정·솔버블) — 3 숲 + 3 산. 시드는 재현용 순서 셔플일 뿐(draw RNG 아님).
+  var HAND_POOL = ["F", "F", "F", "M", "M", "M"];
+
+  // window.__constants — QA 가 brief 파생값과 drift 교차검증(하드코딩 적발).
+  window.__constants = {
+    GRID_W: GRID_W, GRID_H: GRID_H, SEED: SEED,
+    CARD_BASE: CARD_BASE, MATCH_BONUS: MATCH_BONUS, TARGET_SCORE: TARGET_SCORE, HAND_SIZE: HAND_SIZE,
+  };
+
+  // ── 시드 고정 PRNG(mulberry32·인라인·slide-puzzle 동형). 동일 시드→동일 덱(재현·비로그라). ──
+  function makePRNG(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // 고정 손패 빌드: 설계 구성(HAND_POOL)을 시드 고정 Fisher-Yates 로 결정론 정렬 → {id,type,used}.
+  // ★draw RNG 없음 — 6장 전부 처음부터 손패에 있다(랜덤 런 아님·설계된 퍼즐). 동일 시드→동일 손패.
+  function buildHand() {
+    var pool = HAND_POOL.slice();
+    var rng = makePRNG(SEED);
+    for (var i = pool.length - 1; i > 0; i--) {
+      var j = Math.floor(rng() * (i + 1));
+      var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    return pool.map(function (type, i) { return { id: i, type: type, used: false }; });
+  }
+
+  // ── 결정론 상태 (window.__state 전역·brief state_shape 와 1:1) ───────────────────
+  // grid: 길이 GRID_W*GRID_H, 각 셀 null(빈칸) 또는 {type,cardId}. hand: 고정 손패. score/solved: board 창발.
+  var state = { grid: [], hand: [], score: 0, solved: false };
+  window.__state = state;
+
+  var selectedCardId = null;   // 라이브 UI 선택(헤드리스 훅은 cardId 직접 전달)
+
+  function idx(x, y) { return y * GRID_W + x; }
+  function inGrid(x, y) { return x >= 0 && x < GRID_W && y >= 0 && y < GRID_H; }
+
+  // ★board 재계산(순수 함수·direct-set 금지) — score/solved 는 매 배치마다 board 전체에서 창발한다.
+  //   boardScore = Σ base(배치 셀당) + Σ match_bonus(직교 인접 같은타입 edge·각 edge 1회: 우/하 이웃만 검사).
+  //   따라서 같은 카드라도 인접 이웃 타입이 다르면 점수가 달라진다(position-dependent·anti-hollow).
+  function recomputeBoard() {
+    var score = 0;
+    for (var y = 0; y < GRID_H; y++) {
+      for (var x = 0; x < GRID_W; x++) {
+        var c = state.grid[idx(x, y)];
+        if (!c) continue;
+        score += CARD_BASE;                                  // 배치 타일 기본점
+        // 우측 이웃 edge(각 무방향 edge 1회만 가산)
+        if (x + 1 < GRID_W) {
+          var r = state.grid[idx(x + 1, y)];
+          if (r && r.type === c.type) score += MATCH_BONUS;  // 매칭(같은타입 인접) combo
+        }
+        // 하단 이웃 edge
+        if (y + 1 < GRID_H) {
+          var d = state.grid[idx(x, y + 1)];
+          if (d && d.type === c.type) score += MATCH_BONUS;
+        }
+      }
+    }
+    state.score = score;                                     // 창발(직접세팅 아님·전부 재계산)
+    state.solved = score >= TARGET_SCORE;                    // 클리어도 board 에서 창발
+  }
+
+  function findCard(cardId) {
+    for (var i = 0; i < state.hand.length; i++) if (state.hand[i].id === cardId) return state.hand[i];
+    return null;
+  }
+
+  // ★핵심 액션(AC2/AC3 [CORE]): 손패 카드를 (x,y) 빈칸에 배치 → 셀 점유 AND board 재계산.
+  //   결합 불변식: 점유 + 인접 보너스 창발(board 순수 재계산). 점유/범위밖/사용된·미존재 카드 = 거부(negative).
+  function playCard(cardId, x, y) {
+    if (state.solved) return false;                          // 클리어 후 잠금(불변)
+    if (!inGrid(x, y)) { A.play("reject"); return false; }   // 범위밖 거부(negative)
+    var card = findCard(cardId);
+    if (!card || card.used) { A.play("reject"); return false; } // 미존재/사용된 카드 거부(negative)
+    if (state.grid[idx(x, y)]) { A.play("reject"); return false; } // 점유 셀 거부(negative)
+    state.grid[idx(x, y)] = { type: card.type, cardId: card.id }; // 셀 점유
+    card.used = true;
+    var before = state.score;
+    recomputeBoard();                                        // ★board 재계산(점수/클리어 창발)
+    if (state.solved) A.play("solve");
+    else if (state.score > before + CARD_BASE) A.play("combo"); // 인접 보너스 발생 시 combo 음
+    else A.play("place");
+    if (selectedCardId === cardId) selectedCardId = null;
+    render();
+    return true;
+  }
+
+  // 처음/리셋: 시드 고정 손패 재배분(동일 id/type/순서)·grid 빈상태·score=0·solved=false.
+  function resetGame() {
+    state.hand = buildHand();
+    state.grid = new Array(GRID_W * GRID_H).fill(null);
+    state.score = 0;
+    state.solved = false;
+    selectedCardId = null;
+    render();
+  }
+
+  // 헤드리스 테스트 API — Canvas 실입력과 **동일 로직**(QA 가 page.evaluate 로 구동·우회 아님).
+  window.__playCard = playCard;
+  window.__resetGame = resetGame;
+  // ★anti-hollow: score/solved 직접세터를 노출하지 않는다(direct-set forbidden) — board 재계산만이 유일 경로.
+
+  // ── 입력: Canvas 탭(손패 선택 → 빈칸 배치) ────────────────────────────────────
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var CELL = 96, GPAD = 6, GX = 30, GY = 64;          // 그리드 기하(3*96+2*6=300·좌우 30 여백)
+  var HANDY = 392, HCELL = 48, HPAD = 8, HX = 30;     // 손패 행 기하
+
+  // 좌표 = CSS 스케일 보정(캔버스가 max-width 로 축소될 수 있음·비율 곱·slide/clicker 동형).
+  function toCanvas(e) {
+    var rect = canvas.getBoundingClientRect();
+    var sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+  }
+
+  // 손패 카드 i 의 화면 x(미사용 카드만 행에 노출).
+  function handSlots() {
+    var slots = [], col = 0;
+    for (var i = 0; i < state.hand.length; i++) {
+      if (state.hand[i].used) continue;
+      slots.push({ card: state.hand[i], x: HX + col * (HCELL + HPAD), y: HANDY });
+      col++;
+    }
+    return slots;
+  }
+
+  // Pointer Events 단일 경로(마우스+펜+터치). 탭: 손패 행이면 카드 선택·그리드면 배치.
+  canvas.addEventListener("pointerup", function (e) {
+    A.unlock();                                              // 첫 제스처서 오디오 unlock(autoplay 정책)
+    var p = toCanvas(e);
+    // 손패 영역?
+    if (p.y >= HANDY && p.y <= HANDY + HCELL) {
+      var slots = handSlots();
+      for (var s = 0; s < slots.length; s++) {
+        if (p.x >= slots[s].x && p.x <= slots[s].x + HCELL) {
+          selectedCardId = slots[s].card.id;
+          render();
+          return;
+        }
+      }
+      return;
+    }
+    // 그리드 영역?
+    var gx = Math.floor((p.x - GX) / (CELL + GPAD));
+    var gy = Math.floor((p.y - GY) / (CELL + GPAD));
+    if (inGrid(gx, gy) && p.x >= GX && p.y >= GY && selectedCardId !== null) {
+      playCard(selectedCardId, gx, gy);
+    }
+  });
+
+  // 다시 시작 버튼.
+  var reBtn = document.getElementById("reset");
+  if (reBtn) reBtn.addEventListener("click", function () { A.unlock(); resetGame(); });
+
+  // 뮤트 버튼: 첫 탭=사운드 켜기(unlock)·이후=뮤트 토글.
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+
+  function drawTile(x, y, w, h, type, selected) {
+    var t = TYPES[type];
+    var grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, t.top); grad.addColorStop(1, t.bot);
+    ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fillRect(x, y, w, Math.max(4, h * 0.12));
+    ctx.strokeStyle = selected ? "#ffd166" : t.ink; ctx.lineWidth = selected ? 4 : 2;
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.fillStyle = t.ink; ctx.font = "bold " + Math.floor(h * 0.42) + "px monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(t.label, x + w / 2, y + h / 2);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  }
+
+  function render() {
+    ctx.fillStyle = "#0e0a17"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // HUD: score / target / solved
+    ctx.fillStyle = "#e0e0e0"; ctx.font = "16px monospace";
+    ctx.fillText("score: " + state.score + " / " + TARGET_SCORE, 12, 28);
+    ctx.fillStyle = state.solved ? "#69d68a" : "#9b88c2";
+    ctx.font = "bold 16px monospace";
+    ctx.fillText(state.solved ? "CLEAR!" : "배치 중", 250, 28);
+    ctx.fillStyle = "#5b4f78"; ctx.font = "11px monospace";
+    ctx.fillText("같은 종류 인접 = +" + MATCH_BONUS + " combo", 12, 48);
+
+    // 그리드
+    for (var y = 0; y < GRID_H; y++) {
+      for (var x = 0; x < GRID_W; x++) {
+        var px = GX + x * (CELL + GPAD), py = GY + y * (CELL + GPAD);
+        var c = state.grid[idx(x, y)];
+        if (c) {
+          drawTile(px, py, CELL, CELL, c.type, false);
+        } else {
+          ctx.fillStyle = "#1a1330"; ctx.fillRect(px, py, CELL, CELL);
+          ctx.strokeStyle = "#2c2348"; ctx.lineWidth = 2; ctx.strokeRect(px + 1, py + 1, CELL - 2, CELL - 2);
+        }
+      }
+    }
+
+    // 손패
+    ctx.fillStyle = "#9b88c2"; ctx.font = "12px monospace";
+    ctx.fillText("손패(고정):", HX, HANDY - 8);
+    var slots = handSlots();
+    for (var s = 0; s < slots.length; s++) {
+      drawTile(slots[s].x, slots[s].y, HCELL, HCELL, slots[s].card.type, slots[s].card.id === selectedCardId);
+    }
+    if (slots.length === 0 && !state.solved) {
+      ctx.fillStyle = "#9b88c2"; ctx.font = "13px monospace";
+      ctx.fillText("손패 소진 — 다시 시작으로 재배분", HX, HANDY + 28);
+    }
+  }
+
+  resetGame();   // init: 시드 고정 손패 + 빈 grid + score=0 + solved=false
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# story-idle provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: story-idle
+brief_blob_sha: 2b3f2b356491dc748a820b8602c87cfdcc2a870a   # `git hash-object vault/specs/story-idle.md`(내용 지문)
+brief_sha: PENDING_COMMIT   # 커밋 시점에 오케스트레이터가 brief commit sha 로 확정(게임 commit 선행·provenance 시계열)
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/story-idle.md
+implemented_by: Claude Code (/all-in-one #3 B1 · #9 story-idle · 합의계획 .omc/plans/all-in-one-longlist-12.md §3)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit 보다 선행한다(provenance 시계열·clicker/memoir/rhythm 규범).
+  QA(web/scripts/play_story-idle_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해 단언을 파생한다(하드코딩 금지).
+  단언 값(생성기 cost=10·서사 임계 thresholds=[20,60,140])은 브리프 acceptance_criteria 에서만 파생되며,
+  게임 코드 상수(window.__constants: GEN_COST·NARRATIVE_THRESHOLD)와 교차검증된다(드리프트 적발).
+  ★핵심 차별 루프(빈틈 직격): 진행(자원 임계)이 서사를 게이트한다 — 모바일 클리커 클론과 가르는 유일선.
+  ★AC2 [CORE] 결합 불변식: __buyGenerator() → resource=old-cost AND rate+=1 AND generators+=1, 이후
+  __tick(1) 이 **새** rate 만큼 가산(clicker upgrade 결합 동형·단일 카운터로 불충족 → 렌더-only theater 차단).
+  ★AC3 서사 게이트: resource>=threshold[beat] 도달 시 beat 창발·monotonic(소비로 임계 아래로 내려가도 미회귀 —
+  현재자원 거울 아님)·beatsShown 증가·직접세팅(__setBeat) 부재(direct-set forbidden).
+  ★AC4 방치 결정론: __tick(n) → resource+=rate*n(논리 틱·wall-clock 비의존). 라이브 방치도 동일 __tick 경유
+  (setInterval 고정스텝·dt/now 누산 금지). 헤드리스 결정론은 __stopIdle 로 타이머 동결 후 __tick(n) 수동 스텝.
+  하네스가 게임 소스 gated 경로에 Date.now/performance.now/requestAnimationFrame read 0 을 grep 으로 강제(§2.5).
+  ★provenance 실증: 브리프 AC load-bearing 라인(init/buy/coupling/beat)이 비면 deriveContract 파생 불가 → FAIL.
+  verify 가 정상 brief→PASS·AC 제거/변이 brief→FAIL 양 경로를 구동(brief-driven 무하드코딩 실증·done 게이트).

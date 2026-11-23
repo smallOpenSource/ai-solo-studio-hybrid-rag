@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Orchestrator - Chat Panel</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed-variant": "#743500",
+                        "inverse-surface": "#e2e2e7",
+                        "tertiary-fixed-dim": "#ffb689",
+                        "primary-fixed": "#e0e0ff",
+                        "tertiary": "#ffb689",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-lowest": "#0c0e12",
+                        "on-primary": "#000da4",
+                        "on-primary-container": "#fffdff",
+                        "on-primary-fixed": "#000569",
+                        "secondary-fixed": "#e2e2ea",
+                        "error": "#ffb4ab",
+                        "on-secondary": "#2e3036",
+                        "background": "#111317",
+                        "inverse-on-surface": "#2e3034",
+                        "on-tertiary": "#512300",
+                        "surface-container-high": "#282a2e",
+                        "on-background": "#e2e2e7",
+                        "secondary-fixed-dim": "#c5c6cd",
+                        "outline-variant": "#454655",
+                        "on-surface": "#e2e2e7",
+                        "on-secondary-fixed": "#191c21",
+                        "outline": "#8f8fa0",
+                        "tertiary-container": "#bb5a00",
+                        "inverse-primary": "#3f4cda",
+                        "surface-container-highest": "#333539",
+                        "on-tertiary-container": "#fffdff",
+                        "on-secondary-fixed-variant": "#45474d",
+                        "surface": "#111317",
+                        "secondary": "#c5c6cd",
+                        "surface-tint": "#bec2ff",
+                        "surface-variant": "#333539",
+                        "tertiary-fixed": "#ffdbc8",
+                        "secondary-container": "#47494f",
+                        "primary": "#bec2ff",
+                        "surface-container": "#1e2023",
+                        "on-surface-variant": "#c6c5d7",
+                        "on-error": "#690005",
+                        "on-secondary-container": "#b7b8bf",
+                        "surface-dim": "#111317",
+                        "primary-fixed-dim": "#bec2ff",
+                        "primary-container": "#5865f2",
+                        "error-container": "#93000a",
+                        "surface-container-low": "#1a1c1f",
+                        "on-tertiary-fixed": "#311300",
+                        "surface-bright": "#37393d",
+                        "on-primary-fixed-variant": "#222fc2"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "xl": "32px",
+                        "unit": "4px",
+                        "xs": "4px",
+                        "sidebar-width": "240px",
+                        "header-height": "48px",
+                        "sm": "8px",
+                        "md": "16px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "label-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom scrollbar for dense internal tool feel */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2b2d31;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #383a40;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background h-screen flex justify-end font-body-md text-body-md overflow-hidden">
+<!-- Fixed Vertical Chat Panel -->
+<div class="w-[320px] h-full bg-surface-container-high flex flex-col border-l border-surface-container-highest">
+<!-- Header: TopAppBar (from JSON) -->
+<header class="bg-background dark:bg-background text-primary dark:text-primary font-headline-md text-headline-md font-bold text-on-background dark:text-on-background w-full flex justify-between items-center h-header-height px-md shrink-0">
+<h1 class="font-headline-md text-headline-md font-bold"># 채팅</h1>
+<div class="flex gap-sm">
+<button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-high transition-colors cursor-pointer active:scale-95 p-xs rounded">
+<span class="material-symbols-outlined text-[20px]" data-icon="dock_to_left">dock_to_left</span>
+</button>
+<button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-high transition-colors cursor-pointer active:scale-95 p-xs rounded">
+<span class="material-symbols-outlined text-[20px]" data-icon="collapse_all">collapse_all</span>
+</button>
+</div>
+</header>
+<!-- Message List -->
+<div class="flex-1 overflow-y-auto bg-[#2b2d31] p-md flex flex-col gap-sm">
+<!-- Message 1: System -->
+<div class="flex gap-sm group hover:bg-[#383a40] p-sm -mx-sm rounded-lg transition-colors cursor-default">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0">
+<span class="font-label-md text-label-md text-on-surface-variant">S</span>
+</div>
+<div class="flex flex-col w-full">
+<div class="flex items-baseline gap-xs">
+<span class="font-label-md text-label-md text-on-surface">시스템</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">10:00</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">세션이 시작되었습니다.</p>
+</div>
+</div>
+<!-- Message 2: CEO -->
+<div class="flex gap-sm group hover:bg-[#383a40] p-sm -mx-sm rounded-lg transition-colors cursor-default">
+<div class="w-8 h-8 rounded-full bg-secondary-container shrink-0 overflow-hidden">
+<img alt="CEO Portrait" class="w-full h-full object-cover" data-alt="A professional headshot of a mature executive in a dark tailored suit, conveying authority and focus, set against a dark gray modern office background. Deep shadows and cool tones emphasize a corporate, high-end AI orchestration aesthetic. The lighting is dramatic yet even, ensuring clarity while maintaining a low-light desktop platform feel." src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+</div>
+<div class="flex flex-col w-full">
+<div class="flex items-baseline gap-xs">
+<span class="font-label-md text-label-md text-on-surface">CEO</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">10:01</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface">오늘의 개발 진척도를 보고해 주세요.</p>
+</div>
+</div>
+<!-- Message 3: 개발자 -->
+<div class="flex gap-sm group hover:bg-[#383a40] p-sm -mx-sm rounded-lg transition-colors cursor-default">
+<div class="w-8 h-8 rounded-full bg-secondary-container shrink-0 overflow-hidden">
+<img alt="Developer Portrait" class="w-full h-full object-cover" data-alt="A professional headshot of a focused software developer wearing a subtle dark tech-wear jacket, looking slightly off-camera with concentration. The background is a blurred, dark low-light workspace with hints of glowing monitors. Cool blue and indigo lighting subtly accents the scene, aligning with a modern, dense data dashboard environment." src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+</div>
+<div class="flex flex-col w-full">
+<div class="flex items-baseline gap-xs">
+<span class="font-label-md text-label-md text-on-surface">개발자</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">10:02</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface">API 통합 작업을 완료했습니다. 현재 테스트 중입니다.</p>
+</div>
+</div>
+<!-- Message 4: 마케터 -->
+<div class="flex gap-sm group hover:bg-[#383a40] p-sm -mx-sm rounded-lg transition-colors cursor-default">
+<div class="w-8 h-8 rounded-full bg-secondary-container shrink-0 overflow-hidden">
+<img alt="Marketer Portrait" class="w-full h-full object-cover" data-alt="A clean, professional headshot of a creative marketing specialist in a dark turtleneck. The expression is confident and engaged. Set against a deep charcoal background with soft, diffused white lighting that creates gentle tonal layering. The image feels sharp, authoritative, and fits perfectly within a low-light corporate communication interface." src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+</div>
+<div class="flex flex-col w-full">
+<div class="flex items-baseline gap-xs">
+<span class="font-label-md text-label-md text-on-surface">마케터</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">10:03</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface">새로운 소셜 미디어 캠페인 초안을 준비했습니다.</p>
+</div>
+</div>
+<!-- Message 5: 나 (Right-aligned) -->
+<div class="flex gap-sm group hover:bg-[#383a40] p-sm -mx-sm rounded-lg transition-colors cursor-default justify-end">
+<div class="flex flex-col items-end w-full">
+<div class="flex items-baseline gap-xs flex-row-reverse">
+<span class="font-label-md text-label-md text-on-surface">나</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">10:05</span>
+</div>
+<div class="bg-primary-container/20 text-on-surface p-sm rounded-lg rounded-tr-none mt-xs">
+<p class="font-body-md text-body-md">수고하셨습니다. 테스트 결과 공유 부탁드려요.</p>
+</div>
+</div>
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center shrink-0">
+<span class="font-label-md text-label-md text-on-primary-container">나</span>
+</div>
+</div>
+<!-- Message 6: 개발자 -->
+<div class="flex gap-sm group hover:bg-[#383a40] p-sm -mx-sm rounded-lg transition-colors cursor-default">
+<div class="w-8 h-8 rounded-full bg-secondary-container shrink-0 overflow-hidden">
+<img alt="Developer Portrait" class="w-full h-full object-cover" data-alt="A professional headshot of a focused software developer wearing a subtle dark tech-wear jacket, looking slightly off-camera with concentration. The background is a blurred, dark low-light workspace with hints of glowing monitors. Cool blue and indigo lighting subtly accents the scene, aligning with a modern, dense data dashboard environment." src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+</div>
+<div class="flex flex-col w-full">
+<div class="flex items-baseline gap-xs">
+<span class="font-label-md text-label-md text-on-surface">개발자</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">10:06</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface">알겠습니다. 5분 내로 리포트 생성하겠습니다.</p>
+</div>
+</div>
+</div>
+<!-- Input Bar -->
+<div class="bg-background p-md shrink-0 border-t border-surface-container-highest">
+<div class="relative bg-surface-container-high rounded-lg flex items-center p-unit focus-within:ring-2 focus-within:ring-primary-container transition-shadow">
+<input class="bg-transparent border-none w-full text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant focus:ring-0 p-sm" placeholder="메시지 입력…" type="text"/>
+<button class="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-primary-container transition-colors rounded-md hover:bg-surface-container-highest">
+<span class="material-symbols-outlined text-[20px]" data-icon="send">send</span>
+</button>
+</div>
+</div>
+</div>
+</body></html>

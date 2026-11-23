@@ -1,0 +1,31 @@
+[Unit]
+Description=one_man_corp Discord adapter (N-bot @mention · web SSE/REST consumer · outbound)
+Documentation=file:///opt/studio/scripts/serve_discord.sh
+# 부팅 순서: web 뒤(어댑터는 web SSE /events/stream·승인 REST의 클라이언트 소비자·하드 의존 아님·재연결有).
+After=one-man-corp-web.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/studio
+# discord conda env python 직접 exec(conda run 회피·제약#3). adapters.discord __main__이 .env 자체로드
+# (load_dotenv·CWD 무관). ★토큰 부재 시 '라이브 비활성' 로그 후 exit 0 → Restart=on-failure라
+# 크래시루프 안 함(의도). 현재 DISCORD_BOT_TOKEN + per-role 16 토큰 설정됨(N봇 @멘션 활성).
+ExecStart=/opt/conda/envs/one_man_corp-discord/bin/python -m adapters.discord
+# ★도입 목적: 비정상 종료(크래시) 시 자동 재기동. 정상 SIGTERM·토큰부재 exit 0은 재기동 안 함.
+Restart=on-failure
+RestartSec=5
+# 어댑터는 web SSE 장수명 스트림 소비 → graceful 종료가 지연될 수 있음(web와 동일 특성). 짧은
+# 타임아웃 후 systemd가 SIGKILL. 봇은 재기동 시 Discord 게이트웨이 RESUME + web 재로그인/SSE
+# 재연결(P7·G6 세션auth·로그 실증)이라 무손실 재수렴.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+# ★로깅 가시성: 어댑터는 stderr로 로깅하나 이 박스에선 journald --user가 미수집(No entries) →
+# 운영자 가시성 위해 기존 로그파일에 직접 append(구 수동런처와 동일 위치·로그 연속성·systemd 239
+# append: 지원). 다음 재기동부터 활성(현 실행 프로세스는 연결 17개로 기능 확증됨).
+StandardOutput=append:/opt/studio/.omc/logs/discord_bot_live.log
+StandardError=append:/opt/studio/.omc/logs/discord_bot_live.log
+
+[Install]
+WantedBy=default.target

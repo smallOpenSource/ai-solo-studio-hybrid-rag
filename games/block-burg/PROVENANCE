@@ -1,0 +1,24 @@
+# block-burg provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: block-burg
+brief_blob_sha: 7b242eef3c5087cca435e18cff63abcadce43ae2   # `git hash-object vault/specs/block-burg.md`(내용 지문)
+brief_sha: PENDING_COMMIT   # 커밋 시점에 오케스트레이터가 brief commit sha 로 확정(게임 commit 선행·provenance 시계열)
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/block-burg.md
+implemented_by: Claude Code (/all-in-one #3 B2 · #11 block-burg · 합의계획 .omc/plans/all-in-one-longlist-12.md §3)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit 보다 선행한다(provenance 시계열·clicker/memoir/story-idle 규범).
+  QA(web/scripts/play_block-burg_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해 단언을 파생한다(하드코딩 금지).
+  단언 값(시너지 표 SYN·base=1·width/height=8·queueLen=8)은 브리프 acceptance_criteria 에서만 파생되며,
+  게임 코드 상수(window.__constants: BASE·SYN·WIDTH·HEIGHT·QUEUE_LEN)와 교차검증된다(드리프트 적발).
+  ★핵심 차별 루프(빈틈 직격): 테트로미노 배치 **자체가** 도시건설 — 퍼즐을 핵심 루프로 쓴 도시건설(Drop Duchy 외 부재).
+  ★AC2 [CORE] 배치 결합: __placePiece(pieceId,x,y,rot) → 셀 스탬프(zone type) AND placed+=1 AND
+  townValue = computeTownValue(board) 재계산. townValue = Σ(BASE·점유셀) + Σ(직교 인접 점유쌍 시너지).
+  하네스가 **독립 재계산**으로 게임 townValue 와 일치 단언(direct-set 아님)·__setTownValue 류 부재(direct-set forbidden).
+  ★AC3 도시가치 창발(falsifiable·anti-hollow 게이트): 같은 조각을 **인접** 배치 vs **고립** 배치 →
+  점유 셀 수는 동일한데 townValue 상이(시너지 전 쌍 비-0 보장). 동일하면 placed*const hollow → RED.
+  ★AC4 턴제 결정론: 시드 고정 큐(mulberry32)·동일 배치열 → 동일 grid+townValue. 실시간 낙하 아님(턴제·조각 단위
+  이산 배치)·낙하 타이머/rAF 금지. 하네스가 게임 소스 gated 경로에 Date.now/performance.now/requestAnimationFrame
+  read 0 을 grep 으로 강제(§2.5 belt-and-suspenders). negative: 겹침/범위밖/차례아님 거부(상태 불변).
+  ★provenance 실증: 브리프 AC load-bearing 라인(init/place/synergy/coupling/negative)이 비면 deriveContract
+  파생 불가 → FAIL. verify 가 정상 brief→PASS·coupling AC 제거 brief→FAIL(자식 exit≠0) 양 경로를 구동
+  (brief-driven 무하드코딩 실증·done 게이트).

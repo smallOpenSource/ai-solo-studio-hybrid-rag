@@ -1,0 +1,16 @@
+# SR/renewal §9.1 — WorkAdventure 내부 네트워크(rootless Podman Quadlet).
+# 6 브릭(play/back/map-storage/icon/uploader/redis)이 이 네트워크의 컨테이너 DNS 이름으로
+# 서로 통신한다(예: back:50051·map-storage:3000·redis:6379). 외부 노출은 .container 의
+# PublishPort(ports.json 2817-2820)만 — 내부 gRPC/HTTP 는 호스트로 새지 않는다(§9.2 포트모델).
+#
+# 설치: cp deploy/systemd/wa/aigs-wa.* ~/.config/containers/systemd/ && systemctl --user daemon-reload
+# 생성 유닛: aigs-wa-network.service (다른 브릭이 Wants/After 로 의존).
+[Unit]
+Description=AIGS WorkAdventure internal network (rootless Podman)
+
+[Network]
+NetworkName=aigs-wa
+# 브릭 간 컨테이너 DNS(back/map-storage/redis 이름 해석)는 podman 기본 DNS 로 충분.
+
+[Install]
+WantedBy=default.target

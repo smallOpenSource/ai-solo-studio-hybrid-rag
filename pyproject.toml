@@ -1,0 +1,56 @@
+[project]
+name = "ai-solo-studio-hybrid-rag"
+version = "0.1.0"
+description = "Korean hybrid RAG (Qdrant dense+sparse RRF, BGE-M3 rerank) inside a multi-agent solo studio"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.12"
+dependencies = [
+    "httpx",
+    "pyyaml",
+    "python-dotenv",
+    "fastapi",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-timeout",
+]
+# Phase 2 지식 레이어 전용 — one_man_corp-knowledge env에서만 설치한다
+# (pip install -e ".[knowledge]"). 기본 install(-e .)에는 안 들어가므로
+# engine·bench env는 qdrant-client 없이 그대로 유지된다(의존성 격리).
+knowledge = [
+    "qdrant-client==1.18.0",
+    "crawl4ai",
+]
+# 선택: 구조 인식 청킹(knowledge/chunk.py 가 있으면 사용, 없으면 내장 청커로 폴백)
+chunking = [
+    "docling",
+]
+# Phase 4b Discord 어댑터 전용 — one_man_corp-discord env에서만 설치한다
+# (pip install -e ".[discord]"). 기본 install(-e .)에는 안 들어가므로
+# engine·bench·knowledge env는 discord.py 없이 그대로 유지된다(의존성 격리).
+discord = [
+    "discord.py>=2.7,<3",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bench*", "core*", "office*", "workflows*", "web_server*", "knowledge*", "adapters*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# ★기본 게이트(P4): bare `pytest`도 slow(실서버·플래키 실LLM) 제외 + 개별 30s 타임아웃
+# (hang 가드) + 캐시 비활성. run_tests.sh/ci_gate.sh는 이를 그대로 쓰고, slow는 명시
+# (`pytest -m slow`)할 때만 수집한다. CLI `-m`가 오면 그게 우선(동일 'not slow'라 무충돌).
+addopts = "-m 'not slow' --timeout=30 -p no:cacheprovider"
+markers = [
+    "slow: 실서버 연결 테스트",
+]
+testpaths = ["tests"]

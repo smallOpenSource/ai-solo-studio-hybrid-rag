@@ -1,0 +1,262 @@
+{
+  "data": [
+    {
+      "created": 1780806050,
+      "id": "agent",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "claude-code",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "coder",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "coder-next",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "deep-thinker",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "default",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma-26b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma-4-26b-a4b-it",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma-4-e2b-it",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma-4-e4b-it",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma-e2b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma-e4b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma4-26b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma4-e2b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma4-e4b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "gemma4-moe",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "glm",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "glm-4.7",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "glm-4.7-flash",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "glm-flash",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "multimodal",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "omni",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "orchestrator",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen-coder",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-coder",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-coder-30b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-coder-30b-a3b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-coder-30b-a3b-instruct",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-coder-next",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-coder-next-80b",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-next",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-next-80b-thinking",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-next-thinking",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-omni",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-omni-30b-a3b-thinking",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3-omni-thinking",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "qwen3.6",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "***",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "reasoning",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "thinker",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "thinking-coder",
+      "object": "model",
+      "owned_by": "llama-swap"
+    },
+    {
+      "created": 1780806050,
+      "id": "vision",
+      "object": "model",
+      "owned_by": "llama-swap"
+    }
+  ]
+}

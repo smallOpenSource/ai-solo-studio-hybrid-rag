@@ -1,0 +1,20 @@
+# SR/renewal §9.1 — WorkAdventure `back` 브릭 (rootless Podman Quadlet·결정① 비수정 prebuilt).
+# ★AGPL §13: upstream prebuilt 비수정(로컬 build 0). play↔back gRPC :50051 은 내부 네트워크
+#   전용(호스트 비노출·결정④ 로컬 프로브 대상). 외부 PublishPort 없음(내부 서비스).
+[Unit]
+Description=AIGS WorkAdventure back (game state·gRPC 50051·unmodified upstream)
+Wants=aigs-wa-network.service aigs-wa-redis.service
+After=aigs-wa-network.service aigs-wa-redis.service
+
+[Container]
+Image=docker.io/thecodingmachine/workadventure-back:v1.31.7
+Network=aigs-wa.network
+# back env(내부 전용·시크릿 SECRET_KEY 등)은 클린-env 파일로만 주입(브릭 분리).
+EnvironmentFile=%h/.config/containers/systemd/wa-back.env
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

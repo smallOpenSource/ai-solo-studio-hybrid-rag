@@ -1,0 +1,21 @@
+# still-grove provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: still-grove
+brief_blob_sha: 7c6e13833313ae96484f5d90043f44c91328b3ca   # `git hash-object vault/specs/still-grove.md`(내용 지문·B1 #2)
+brief_sha: PENDING_COMMIT   # 커밋 시점에 오케스트레이터가 brief commit sha 로 확정(게임 commit 선행·provenance 시계열)
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/still-grove.md
+implemented_by: Claude Code (all-in-one B1 batch · #2 still-grove · 마음챙김 자연탐험·웰니스)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit 보다 선행한다(provenance 시계열·clicker/memoir 규범).
+  QA(web/scripts/play_still-grove_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해 단언을 파생한다(하드코딩 금지).
+  단언 임계(stageCap=2·tileCount=6)는 브리프 acceptance_criteria 에서만 파생되며 게임 상수(window.__constants)와
+  교차검증된다(드리프트 적발).
+  ★직격축(역전 anti-hollow): 흔한 게임이 "패배 조건이 있는가"를 증명한다면, 이 슬라이스는 "패배 조건이 **없음**"을
+  증명한다. no-fail 불변식 = 임의 __tend 시퀀스(유효/무효 tileId·cap 초과 포함) 후 (a) fail/gameover/lose/penalty/
+  strike/timer 류 필드·경로 부재, (b) blooms·각 stage 단조 비감소·serenity true→false 역행 0, (c) 시간 감쇠 0
+  (즉시 스냅샷 == 지연 후 스냅샷). 성장은 tend 횟수에서 창발(stage direct-set 금지·cap 초과 no-op)·blooms/serenity
+  는 stage 분포의 순수 재계산(단일 tend-카운터 불가·falsifiable: 같은 총 tend 라도 분포가 다르면 blooms 상이).
+  ★타이머·실패 부재 자체가 기능(웰니스·접근성 우선) — 진행압박/점수/실패/패널티/카운트다운 추가 = Must-NOT.
+  하네스는 정상 brief→PASS 와 STILLGROVE_NEGATIVE=1(AC 제거 변이)→FAIL 양 경로를 구동해 brief-driven·무하드코딩을
+  *실증*(done 게이트·단언만 ≠ done). 소스 grep: requestAnimationFrame/Date.now/performance.now read 0(wall-clock 0).
+</content>

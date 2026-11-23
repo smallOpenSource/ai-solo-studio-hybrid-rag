@@ -1,0 +1,25 @@
+{
+  "upgrades": [
+    {
+      "cap": 5,
+      "delta": 0.15,
+      "id": "U001",
+      "name": "Energy Conduit",
+      "stat": "Damage"
+    },
+    {
+      "cap": 4,
+      "delta": 0.1,
+      "id": "U002",
+      "name": "Aetheric Shielding",
+      "stat": "Max HP"
+    },
+    {
+      "cap": 3,
+      "delta": 0.2,
+      "id": "U003",
+      "name": "Resource Harvester",
+      "stat": "Resource Gain"
+    }
+  ]
+}

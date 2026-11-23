@@ -1,0 +1,37 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"name\": \"get_weather\", \"arguments\": {\"city\": \"서울\"}}",
+        "reasoning_content": "The user is asking for the weather in Seoul.\nI need to use the `get_weather` tool.\nThe required argument is `city`, and the value should be \"서울\" (Seoul).\n\nConstructing the JSON:\n`{\"name\": \"get_weather\", \"arguments\": {\"city\": \"서울\"}}`\n"
+      }
+    }
+  ],
+  "created": 1780806053,
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "system_fingerprint": "b9544-98d5e8ba8",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 87,
+    "prompt_tokens": 84,
+    "total_tokens": 171,
+    "prompt_tokens_details": {
+      "cached_tokens": 70
+    }
+  },
+  "id": "chatcmpl-w4VzI6s353GgiCKtDi3doqkvDIwlAjau",
+  "timings": {
+    "cache_n": 70,
+    "prompt_n": 14,
+    "prompt_ms": 51.85,
+    "prompt_per_token_ms": 3.7035714285714287,
+    "prompt_per_second": 270.0096432015429,
+    "predicted_n": 87,
+    "predicted_ms": 1004.275,
+    "predicted_per_token_ms": 11.543390804597701,
+    "predicted_per_second": 86.62965821114734
+  }
+}

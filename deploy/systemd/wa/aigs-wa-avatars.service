@@ -1,0 +1,20 @@
+[Unit]
+# AIGS WA 직원 아바타 상주 — 9 페르소나(orch /agents·personas.yaml−secretary)를 WorkAdventure
+# 오피스에 상주 아바타로 입장(단일 headless chromium + 페르소나당 context). 암호 게이트(play
+# basic-auth)는 .env HITL_OWNER 자격증명으로 통과. 종료성: 페르소나 수 고정(무한 스폰 0)·
+# Restart=on-failure 가 watchdog. 리소스: 단일 chromium 엔진 공유(9 context).
+Description=AIGS WA 직원 아바타 상주 (9 페르소나 · 단일 headless chromium)
+After=network-online.target aigs-wa-play.service aigs-wa-tlsproxy.service
+Wants=aigs-wa-play.service aigs-wa-tlsproxy.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/studio/web
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+ExecStart=/usr/bin/env node scripts/wa_avatar_presence.mjs
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

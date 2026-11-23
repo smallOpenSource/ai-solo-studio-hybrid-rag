@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>이별의 나룻배 — Farewell Ferry</title>
+<style>
+  html, body { margin: 0; background: #0c1622; color: #d9e6f2; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존)·캔버스는 touch-action:none 으로 탭 소유(페이지 스크롤·줌 차단) */
+  #game { display: block; margin: 14px auto; max-width: 96vw; height: auto; background: #08101a; border: 2px solid #4f7da6; image-rendering: pixelated; touch-action: none; }
+  p { text-align: center; color: #7f93a8; margin: 8px 16px; font-size: 13px; }
+  #memory { color: #9fd9c8; font-style: italic; min-height: 18px; transition: opacity 0.2s; }
+  #memory:empty { opacity: 0; }
+  #eulogy { color: #e7c98b; min-height: 18px; }
+  #eulogy:empty { display: none; }
+  #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #0c1622; color: #d9e6f2; border: 1px solid #4f7da6; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+<canvas id="game" width="480" height="560"></canvas>
+<p>선물을 골라 영혼을 탭하면 돌봄이 쌓입니다. 유대가 가득 차면 작별을 골라 떠나보냅니다(돌아오지 않습니다).</p>
+<!-- 회상(AC3): __farewell 성공(만유대) 시 그 영혼의 한 줄 회상이 여기 렌더(상태게이트+렌더노출). -->
+<p id="memory" aria-live="polite"></p>
+<!-- 회고(AC4): 누적 작별의 순수 합성 결과(resolveEulogy)가 여기 렌더. -->
+<p id="eulogy" aria-live="polite"></p>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단) ──────────────────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.16, noteDur: 0.5,
+    bgm: [196, 0, 220, 0, 174, 0, 196, 0, 146, 0, 164, 0],     // G3 _ A3 _ F3 _ G3 _ D3 _ E3 _ (낮고 잔잔·애상)
+    sfx: function (au) {
+      return {
+        care:     function () { au.tone(523, 0.08, "triangle", 0.4); },          // 돌봄 한 번
+        farewell: function () { au.chord([392, 523, 659], 0.5, "sine", 0.4, 150); }, // 작별(상실의 화음)
+        choose:   function () { au.tone(659, 0.12, "sine", 0.4); },              // 작별 선택
+        reject:   function () { au.tone(180, 0.07, "square", 0.3); },            // 잘못된 선물/미유대 거부
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; } };
+
+  // ── 시드 고정 PRNG (mulberry32·인라인·비결정 RNG 미사용 → 결정론·재현·장식 전용) ──
+  function makePRNG(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var SEED = 0x5A1102;
+
+  // ── 임계(만유대) — 계약 = vault/specs/farewell-ferry.md(farewell: bonds[pid]>=3 · init threshold=3) ──
+  var BOND_THRESHOLD = 3;            // brief 파생(하드코딩 아님 — QA 가 brief threshold 와 drift 단언)
+
+  // ── 선물 팔레트(공유) — 3 영혼이 각자 하나를 원함 + 1 distractor(나침반) ─────────
+  var GIFTS = [
+    { id: "lantern", label: "등불",   color: "#e3c46b" },
+    { id: "net",     label: "그물",   color: "#6bbfae" },
+    { id: "shell",   label: "조개",   color: "#d98fb0" },
+    { id: "compass", label: "나침반", color: "#8f9fd9" }   // 누구에게도 맞지 않는 선물(negative 보조)
+  ];
+  function giftById(id) { for (var i = 0; i < GIFTS.length; i++) { if (GIFTS[i].id === id) return GIFTS[i]; } return null; }
+
+  // ── 영혼(승객) 정의 — gift=원하는 선물·memory=만유대 회상·choices=작별선택(회고 단편 frag) ──
+  //   frag 는 resolveEulogy 가 합성하는 한 줄 단편(선택별 상이 → carry falsifiable).
+  var PASSENGERS = [
+    {
+      id: "keeper", name: "등대지기", gift: "lantern", color: "#e3c46b",
+      memory: "평생 등불을 지키던 그 밤바다의 짠 내가 다시 떠오른다.",
+      choices: [
+        { id: "a", label: "불을 끄지 않고 보낸다", frag: "등불을 끝내 끄지 않은 채 등대지기를" },
+        { id: "b", label: "불을 끄고 쉬게 한다",   frag: "오랜 불을 비로소 끄고 등대지기를" }
+      ]
+    },
+    {
+      id: "fisher", name: "늙은 어부", gift: "net", color: "#6bbfae",
+      memory: "그물 가득 차오르던 새벽의 만선과 비린 바람이 떠오른다.",
+      choices: [
+        { id: "a", label: "마지막 그물을 함께 던진다", frag: "마지막 그물을 함께 던지고 어부를" },
+        { id: "b", label: "그물을 바다에 돌려준다",     frag: "낡은 그물을 바다에 돌려주며 어부를" }
+      ]
+    },
+    {
+      id: "child", name: "표류하던 아이", gift: "shell", color: "#d98fb0",
+      memory: "파도가 건네준 조개껍데기를 귀에 대던 순간이 떠오른다.",
+      choices: [
+        { id: "a", label: "조개를 손에 쥐여 보낸다", frag: "조개를 작은 손에 쥐여 아이를" },
+        { id: "b", label: "조개를 강가에 놓아준다",   frag: "조개를 강가에 가만히 놓아 아이를" }
+      ]
+    }
+  ];
+  function passengerById(pid) { for (var i = 0; i < PASSENGERS.length; i++) { if (PASSENGERS[i].id === pid) return PASSENGERS[i]; } return null; }
+
+  // ── 회고 합성(AC4 carry) — 누적 released + choices 의 **순수 함수**. ──────────────
+  //   외부 mutable state read 금지: 인자(released, choices)와 불변 PASSENGERS 정의만 사용.
+  //   다른 released 승객 → 단편 집합 상이, 다른 choices[pid] → frag 상이(둘 다 falsifiable).
+  //   동일 인자 → 동일 출력(순수·2회 호출 일치). 직접세팅 금지(state.eulogy 는 이 함수에서만 창발).
+  function resolveEulogy(released, choices) {
+    if (!released || released.length === 0) return null;
+    var parts = [];
+    for (var i = 0; i < released.length; i++) {
+      var p = passengerById(released[i]);
+      if (!p) continue;
+      var chId = choices ? choices[released[i]] : null;
+      var cobj = null;
+      for (var c = 0; c < p.choices.length; c++) { if (p.choices[c].id === chId) { cobj = p.choices[c]; break; } }
+      var frag = cobj ? cobj.frag : p.name;            // 선택 있으면 그 단편, 없으면 이름(여전히 승객별 상이)
+      parts.push(frag + " 보냈다");
+    }
+    if (parts.length === 0) return null;
+    return "뱃사공의 회고 — " + parts.join(", ") + ".";
+  }
+
+  // ── 결정론 상태 + 테스트 훅 ────────────────────────────────────────────────────
+  // 계약 = vault/specs/farewell-ferry.md(handoff 브리프) 와 1:1.
+  //   bonds = { pid: int }(유대 게이지·care 창발) · released = [pid](작별 누적·순서 보존)
+  //   choices = { pid: choiceId }(작별 선택) · lastMemory/eulogy = 발화/회고.
+  var state = {
+    passengers: PASSENGERS,         // AC1: 정의 노출(QA 가 정답 선물·회상 참조)
+    bonds: {}, released: [], lastMemory: null, eulogy: null, choices: {},
+    selectedGift: null,             // UI: 현재 고른 선물(care 대상)
+    threshold: BOND_THRESHOLD
+  };
+  function zeroBonds() { var b = {}; for (var i = 0; i < PASSENGERS.length; i++) { b[PASSENGERS[i].id] = 0; } return b; }
+  state.bonds = zeroBonds();
+  window.__state = state;           // 테스트훅(헤드리스 상태 단언)
+
+  function isReleased(pid) { return state.released.indexOf(pid) >= 0; }
+
+  // ── 핵심 액션 ──────────────────────────────────────────────────────────────────
+  // care(AC2·[CORE]): 맞는 선물이면 bonds[pid]+=1(창발)·틀린 선물 거부(negative)·만유대 후 no-op(cap).
+  //   ★direct-set forbidden: bonds 는 이 함수의 +=1 누적으로만 차오른다(단일 세팅 불가).
+  function care(pid, giftId) {
+    var p = passengerById(pid);
+    if (!p) return false;
+    if (isReleased(pid)) return false;                 // 떠난 영혼은 더 못 돌본다
+    if (giftId !== p.gift) { A.play("reject"); return false; }   // 틀린 선물 → 거부(negative·bonds 불변)
+    if (state.bonds[pid] >= BOND_THRESHOLD) return false;        // 만유대 cap → no-op(bounded)
+    state.bonds[pid] += 1;                             // 창발: 돌봄 횟수에서 유대가 차오른다
+    A.play("care");
+    render();
+    return true;
+  }
+
+  // farewell(AC3 결합): bonds[pid]>=threshold(만유대)일 때만 성공 → released 누적 AND lastMemory 발화.
+  //   ★미유대(bonds<threshold) → 거부(released/lastMemory 불변). 회상은 만유대 작별에서만 발화.
+  function farewell(pid) {
+    var p = passengerById(pid);
+    if (!p) return false;
+    if (isReleased(pid)) return false;                 // 이미 떠남(중복 금지)
+    if (state.bonds[pid] < BOND_THRESHOLD) { A.play("reject"); return false; }  // 미유대 → 작별 거부(negative)
+    state.released.push(pid);                          // 창발: 작별 누적(상실·승리 아님)
+    state.lastMemory = p.memory;                       // 결합: 만유대일 때만 그 영혼의 회상 발화
+    state.eulogy = resolveEulogy(state.released, state.choices);  // 누적 작별 → 회고 재합성(창발)
+    A.play("farewell");
+    render();
+    return true;
+  }
+
+  // choose(작별 선택): choices[pid]=choiceId 기록 + 회고 재합성(선택이 회고 단편을 가른다).
+  function choose(pid, choiceId) {
+    var p = passengerById(pid);
+    if (!p) return null;
+    var cobj = null;
+    for (var c = 0; c < p.choices.length; c++) { if (p.choices[c].id === choiceId) { cobj = p.choices[c]; break; } }
+    if (!cobj) return null;                            // 미지 선택 거부
+    state.choices[pid] = choiceId;
+    state.eulogy = resolveEulogy(state.released, state.choices);  // 선택 반영 → 회고 갱신(released 된 영혼만 합성)
+    A.play("choose");
+    render();
+    return cobj.frag;
+  }
+
+  function selectGift(giftId) { state.selectedGift = giftById(giftId) ? giftId : null; render(); return state.selectedGift; }
+
+  function resetGame() {                                // AC4: 런 간 잔존 0(carry 깨끗이 시작)
+    state.bonds = zeroBonds();
+    state.released = []; state.lastMemory = null; state.eulogy = null; state.choices = {};
+    state.selectedGift = null;
+    render();
+  }
+
+  // 헤드리스 테스트 API — Canvas 실입력과 **동일 로직**(QA가 page.evaluate 로 구동·우회 아님).
+  window.__care = care;
+  window.__farewell = farewell;
+  window.__choose = choose;
+  window.__selectGift = selectGift;
+  window.__resolveEulogy = resolveEulogy;   // AC4: 순수 합성(동일 인자→동일 출력) 단언용
+  window.__resetGame = resetGame;           // AC4: 런 간 잔존 0
+  // QA 구동 훅(정답 선물·회상·임계) — 단언은 항상 care/farewell 경유.
+  window.__wanted = function () { var m = {}; PASSENGERS.forEach(function (p) { m[p.id] = p.gift; }); return m; };
+  window.__memories = function () { var m = {}; PASSENGERS.forEach(function (p) { m[p.id] = p.memory; }); return m; };
+  window.__threshold = function () { return BOND_THRESHOLD; };   // brief↔게임 drift 교차검증용
+
+  // ── 입력: Pointer Events 단일 경로(마우스+터치) + CSS 스케일 보정 ──────────────
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var uiButtons = [];     // render 가 채우는 버튼(선물/선택/작별/리셋)
+  var cardBodies = [];    // render 가 채우는 카드 본문(진행중 영혼 = care 타깃)
+
+  function inRect(x, y, r) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+
+  // 캔버스가 max-width 로 축소되면 rect.width≠canvas.width → 비율(canvas/rect)을 곱해야 적중점이 맞다.
+  function toCanvas(e) {
+    var r = canvas.getBoundingClientRect();
+    var sx = canvas.width / r.width, sy = canvas.height / r.height;
+    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+  }
+
+  canvas.addEventListener("pointerdown", function (e) {
+    A.unlock();                                        // 첫 제스처서 오디오 unlock(autoplay 정책)
+    var p = toCanvas(e);
+    for (var i = 0; i < uiButtons.length; i++) {       // 버튼(구체) 우선
+      var b = uiButtons[i];
+      if (inRect(p.x, p.y, b)) {
+        if (b.kind === "gift") selectGift(b.id);
+        else if (b.kind === "choice") choose(b.pid, b.id);
+        else if (b.kind === "farewell") farewell(b.pid);
+        else if (b.kind === "reset") resetGame();
+        return;
+      }
+    }
+    for (var j = 0; j < cardBodies.length; j++) {      // 카드 본문 탭 = 고른 선물로 돌봄
+      if (inRect(p.x, p.y, cardBodies[j])) { care(cardBodies[j].pid, state.selectedGift); return; }
+    }
+  });
+
+  // ── HTML 노드: 회상·회고(렌더 소비·vestigial echo 차단) ──────────────────────────
+  var memoryEl = document.getElementById("memory");
+  var eulogyEl = document.getElementById("eulogy");
+  function syncDom() {
+    if (memoryEl) memoryEl.textContent = state.lastMemory || "";
+    if (eulogyEl) eulogyEl.textContent = state.eulogy || "";
+  }
+
+  // ── 렌더 ────────────────────────────────────────────────────────────────────────
+  function wrapText(text, maxCh) {
+    var words = text.split(" "), lines = [], line = "";
+    for (var i = 0; i < words.length; i++) {
+      var t = line ? line + " " + words[i] : words[i];
+      if (t.length > maxCh && line) { lines.push(line); line = words[i]; }
+      else line = t;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function drawButton(rect, text, fill, on) {
+    ctx.fillStyle = fill; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = on ? "#39ff14" : "#d9e6f2"; ctx.lineWidth = on ? 3 : 1;
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = "#08101a"; ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 4);
+    ctx.textAlign = "left";
+  }
+
+  var CARD = { y: 104, w: 148, h: 252, gap: 9, x0: 9 };
+  var TRAY = { y: 366, h: 40, w: 108, gap: 8, x0: 10 };
+
+  function render() {
+    uiButtons = []; cardBodies = [];
+    syncDom();
+
+    // 배경(강·여명)
+    ctx.fillStyle = "#08101a"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#102233"; ctx.fillRect(0, 44, canvas.width, 56);             // 강 띠
+    // 결정론 물결 반짝임(시드 고정·장식·wall-clock 비의존)
+    var rng = makePRNG(SEED + state.released.length * 53);
+    ctx.fillStyle = "rgba(159,217,200,0.10)";
+    for (var d = 0; d < 30; d++) { ctx.fillRect(8 + rng() * 464, 50 + rng() * 44, 2, 1); }
+
+    // 타이틀 + 뱃사공
+    ctx.fillStyle = "#9fd9c8"; ctx.font = "16px monospace"; ctx.textAlign = "left";
+    ctx.fillText("이별의 나룻배", 14, 28);
+    ctx.fillStyle = "#7f93a8"; ctx.font = "12px monospace"; ctx.textAlign = "right";
+    ctx.fillText("떠나보냄 " + state.released.length + "/" + PASSENGERS.length, canvas.width - 12, 28);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#4f7da6"; ctx.fillRect(canvas.width / 2 - 14, 66, 28, 18);   // 작은 나룻배 실루엣
+    ctx.fillStyle = "#2b4a63"; ctx.fillRect(canvas.width / 2 - 4, 56, 8, 12);
+
+    // 영혼 카드 3장
+    for (var i = 0; i < PASSENGERS.length; i++) {
+      var p = PASSENGERS[i];
+      var cx = CARD.x0 + i * (CARD.w + CARD.gap), cy = CARD.y;
+      var released = isReleased(p.id), bond = state.bonds[p.id], full = bond >= BOND_THRESHOLD;
+
+      ctx.globalAlpha = released ? 0.4 : 1;
+      ctx.fillStyle = "#0e1d2c"; ctx.fillRect(cx, cy, CARD.w, CARD.h);
+      ctx.strokeStyle = full && !released ? p.color : "#2c4a63"; ctx.lineWidth = 2;
+      ctx.strokeRect(cx, cy, CARD.w, CARD.h);
+
+      // 영혼 아바타(색 블록)
+      ctx.fillStyle = p.color; ctx.fillRect(cx + CARD.w / 2 - 18, cy + 12, 36, 36);
+      ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fillRect(cx + CARD.w / 2 - 18, cy + 12, 36, 8);
+      // 이름
+      ctx.fillStyle = "#d9e6f2"; ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+      ctx.fillText(p.name, cx + CARD.w / 2, cy + 64);
+
+      // 유대 게이지(threshold 핍)
+      var pipW = 26, pipGap = 6, totalW = BOND_THRESHOLD * pipW + (BOND_THRESHOLD - 1) * pipGap;
+      var px = cx + (CARD.w - totalW) / 2, py = cy + 76;
+      for (var g = 0; g < BOND_THRESHOLD; g++) {
+        ctx.fillStyle = g < bond ? "#9fd9c8" : "#1b3346";
+        ctx.fillRect(px + g * (pipW + pipGap), py, pipW, 10);
+      }
+      ctx.fillStyle = "#7f93a8"; ctx.font = "11px monospace";
+      ctx.fillText("유대 " + bond + "/" + BOND_THRESHOLD, cx + CARD.w / 2, cy + 102);
+
+      if (released) {
+        ctx.fillStyle = "#e7c98b"; ctx.font = "12px monospace";
+        ctx.fillText("떠났습니다 ✦", cx + CARD.w / 2, cy + 140);
+        ctx.textAlign = "left"; ctx.globalAlpha = 1;
+        continue;
+      }
+
+      if (full) {
+        // 만유대 → 작별 선택(2) + 보내기
+        ctx.fillStyle = "#9fd9c8"; ctx.font = "11px monospace";
+        ctx.fillText("작별을 고르세요", cx + CARD.w / 2, cy + 122);
+        ctx.textAlign = "left";
+        for (var c2 = 0; c2 < p.choices.length; c2++) {
+          var cb = { kind: "choice", pid: p.id, id: p.choices[c2].id, x: cx + 8, y: cy + 132 + c2 * 34, w: CARD.w - 16, h: 28 };
+          drawButton(cb, p.choices[c2].label, "#b8d4e6", state.choices[p.id] === p.choices[c2].id);
+          uiButtons.push(cb);
+        }
+        var fb = { kind: "farewell", pid: p.id, x: cx + 8, y: cy + CARD.h - 40, w: CARD.w - 16, h: 32 };
+        drawButton(fb, "떠나보내기", "#e7a85e", false);
+        uiButtons.push(fb);
+      } else {
+        // 진행중 → 원하는 선물 힌트 + 카드 본문 탭=돌봄
+        var want = giftById(p.gift);
+        ctx.fillStyle = "#7f93a8"; ctx.font = "11px monospace"; ctx.textAlign = "center";
+        ctx.fillText("원함: " + (want ? want.label : p.gift), cx + CARD.w / 2, cy + 130);
+        ctx.fillStyle = state.selectedGift ? "#39ff14" : "#4f6b82"; ctx.font = "11px monospace";
+        ctx.fillText(state.selectedGift ? "탭하여 돌봄" : "선물을 고르세요", cx + CARD.w / 2, cy + CARD.h - 18);
+        ctx.textAlign = "left";
+        cardBodies.push({ pid: p.id, x: cx, y: cy, w: CARD.w, h: CARD.h });
+      }
+      ctx.textAlign = "left"; ctx.globalAlpha = 1;
+    }
+
+    // 선물 트레이(4)
+    ctx.fillStyle = "#7f93a8"; ctx.font = "12px monospace";
+    ctx.fillText("선물", TRAY.x0, TRAY.y - 6);
+    for (var t = 0; t < GIFTS.length; t++) {
+      var tb = { kind: "gift", id: GIFTS[t].id, x: TRAY.x0 + t * (TRAY.w + TRAY.gap), y: TRAY.y, w: TRAY.w, h: TRAY.h };
+      drawButton(tb, GIFTS[t].label, GIFTS[t].color, state.selectedGift === GIFTS[t].id);
+      uiButtons.push(tb);
+    }
+
+    // 회상(만유대 작별 발화) — 캔버스 + #memory DOM 이중
+    ctx.fillStyle = "#9fd9c8"; ctx.font = "12px monospace"; ctx.textAlign = "left";
+    if (state.lastMemory) {
+      var ml = wrapText(state.lastMemory, 40), my = 436;
+      for (var m = 0; m < ml.length && m < 2; m++) { ctx.fillText(ml[m], 14, my); my += 17; }
+    }
+
+    // 회고(누적 작별 합성) — 캔버스 + #eulogy DOM 이중
+    if (state.eulogy) {
+      ctx.fillStyle = "#e7c98b"; ctx.font = "12px monospace";
+      var el = wrapText(state.eulogy, 40), ey = 478;
+      for (var e = 0; e < el.length && e < 3; e++) { ctx.fillText(el[e], 14, ey); ey += 16; }
+    }
+
+    // 전원 작별 → 리셋
+    if (state.released.length === PASSENGERS.length) {
+      var rb = { kind: "reset", x: 120, y: 524, w: 240, h: 30 };
+      drawButton(rb, "다시 강을 건너다", "#b8d4e6", false);
+      uiButtons.push(rb);
+    }
+  }
+
+  render();
+
+  // 뮤트 버튼: 첫 탭=사운드 켜기(unlock)·이후=뮤트 토글.
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+})();
+</script>
+</body>
+</html>

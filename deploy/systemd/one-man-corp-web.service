@@ -1,0 +1,26 @@
+[Unit]
+Description=one_man_corp web server (operating interface · FastAPI SSE/WS/API · 0.0.0.0:33006)
+Documentation=file:///opt/studio/scripts/serve.sh
+# 부팅 순서: knowledge 검색 서비스 뒤에 기동(웹의 knowledge 프록시 의존·soft ordering).
+After=one-man-corp-knowledge.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/studio
+# engine conda env python 직접 exec(conda run 회피·제약#3). web_server/__main__이 uvicorn
+# workers=1을 코드로 못박음(runner 전역 단일실행락·SSE 인메모리 fan-out 정합·멀티워커 금지).
+# host/port·SSL(studio.example.com)·정적(web/dist)=endpoint.yaml web 블록에서 로드(.env는 core.config 자체로드).
+ExecStart=/opt/conda/envs/one_man_corp-engine/bin/python -m web_server
+# ★도입 목적(SPOF 제거): 비정상 종료 시 자동 재기동. 정상 SIGTERM은 systemd가 success 처리.
+Restart=on-failure
+RestartSec=5
+# ★web 특성: uvicorn graceful shutdown이 장수명 SSE/WS 연결을 기다려 사실상 무한 지연(소켓은
+# SIGTERM 즉시 닫힘=미서빙). 따라서 짧은 타임아웃 후 systemd가 cgroup SIGKILL → 신속 정지/재기동.
+# SSE/WS 클라는 자동 재연결(P7)·이벤트는 office.db 영속+커서 리플레이라 무손실.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

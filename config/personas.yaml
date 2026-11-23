@@ -1,0 +1,86 @@
+# config/personas.yaml — SR/renewal §6.2/§26 MVP 9-페르소나 조직 + 기존 16봇 매핑.
+# ★이 파일은 페르소나 정의 + 봇 매핑(닉네임/조회용) SSoT. graph 배선은 범위 밖(다음 cycle).
+# ★값(토큰)은 여기 없음 — bot_role 로 endpoint.yaml discord.bots 를 가리키고, 토큰은 거기 token_env 경유(키 평문 0).
+# 닉네임 = "{display_name} · {label}" (≤32자). secretary 는 primary(SSE consumer)라 skip_nick.
+personas:
+  - id: ceo
+    role: CEO
+    display_name: 김도윤
+    bot_role: ceo
+    label: CEO
+    prompt_file: prompts/personas/ceo.md
+    reports_to: owner
+    model: strategy          # CEO만 전략모델(qwen)
+  - id: coo
+    role: COO
+    display_name: 정민준
+    bot_role: pm
+    label: COO
+    prompt_file: prompts/personas/coo.md
+    reports_to: ceo
+    model: base
+  - id: dev_lead
+    role: Dev Lead
+    display_name: 이서연
+    bot_role: strategist
+    label: Dev Lead
+    prompt_file: prompts/personas/dev_lead.md
+    reports_to: ceo
+    model: base
+  - id: research
+    role: RESEARCH
+    display_name: 윤시우
+    bot_role: data
+    label: Research
+    prompt_file: prompts/personas/research.md
+    reports_to: coo
+    model: base
+  - id: art
+    role: ART
+    display_name: 서유진
+    bot_role: designer
+    label: Art
+    prompt_file: prompts/personas/art.md
+    reports_to: coo
+    model: base
+  - id: librarian
+    role: LIBRARIAN
+    display_name: 강하은
+    bot_role: planner
+    label: Librarian
+    prompt_file: prompts/personas/librarian.md
+    reports_to: coo
+    model: base
+  - id: intake
+    role: INTAKE
+    display_name: 문가영
+    bot_role: cs
+    label: Intake
+    prompt_file: prompts/personas/intake.md
+    reports_to: coo
+    model: base
+  - id: dev
+    role: DEV
+    display_name: 한지훈
+    bot_role: dev
+    label: Dev
+    prompt_file: prompts/personas/dev.md
+    reports_to: dev_lead
+    model: base
+  - id: qa
+    role: QA
+    display_name: 오태경
+    bot_role: devops
+    label: QA
+    prompt_file: prompts/personas/qa.md
+    reports_to: dev_lead
+    model: base
+  # secretary = primary(=consume_sse·Owner 보고). 닉네임 미변경(의도) → skip_nick.
+  - id: secretary
+    role: SECRETARY
+    display_name: 이수빈
+    bot_role: secretary
+    label: 비서
+    reports_to: owner
+    model: base
+    skip_nick: true

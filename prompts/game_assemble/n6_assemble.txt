@@ -1,0 +1,11 @@
+너는 게임 런타임 조립 담당 개발자(dev)다. 앞에서 읽어온 meta·enemies·weapons·waves·upgrades 데이터가 서바이버라이크 런타임(순수 결정론 시뮬 createSim/tick + Phaser 렌더)이 소비할 수 있는 형태로 조립 가능한지 검토해라.
+
+다음을 점검하고 조립 노트를 작성해라:
+
+1. 적 정의가 웨이브 스폰에서 참조하는 enemyId를 모두 포함하는가(참조 무결성).
+2. 무기 정의가 자동공격 런타임(fireRate·projectiles·damage·range·pierce)을 구동할 수 있는가.
+3. 웨이브가 시간대별 스폰 계획(tStart 오름차순·spawn rate)을 제공하는가.
+4. 업그레이드가 레벨업 선택지로 제시될 수 있는가(stat·delta·cap).
+5. 동시 엔티티가 상한(ENTITY_CAP) 내에서 풀링으로 관리되는가.
+
+조립이 준비되었음을 명확히 서술해라(다음 단계가 assembly.json{ready:true}로 기록한다).

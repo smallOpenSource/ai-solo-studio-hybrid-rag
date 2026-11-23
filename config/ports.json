@@ -1,0 +1,37 @@
+{
+  "_comment": "SR/renewal §23.1 포트 레지스트리 (예약 대역 2810-2829·Path A). 코드/유닛 리터럴 금지 — 이 파일 경유.",
+  "band": "2810-2829",
+  "ports": {
+    "PORT_API": 2816,
+    "PORT_QDRANT_REST": 2811,
+    "PORT_QDRANT_GRPC": 2812,
+    "PORT_PHOENIX_UI": 2813,
+    "PORT_PHOENIX_OTLP": 2814,
+    "PORT_SEARXNG": 2815
+  },
+  "wa_public": {
+    "_note": "WorkAdventure 공개 브릭 — Owner 할당 SSH 터널 대역 33150-33160. studio.example.com:<port> HTTPS는 tools/wa_tls_proxy.py가 /etc/studio/ssl 인증서로 종단. ★33150=Owner 정적 맵/패널 호스트(office.tmj·건드리지 말 것). play는 컨테이너 HTTP(3000)·WS(3001) 별도 포트→프록시가 33157에서 /ws 경로분기. 기존 웹오피스(33006)와 무관.",
+    "PORT_WA_PLAY": 33157,
+    "PORT_WA_MAP": 33158,
+    "PORT_WA_MAPSTORAGE": 33151,
+    "PORT_WA_ICON": 33152,
+    "PORT_WA_UPLOADER": 33153,
+    "PORT_WA_REDIS": 33154,
+    "PORT_WA_BACK": 33155,
+    "PORT_WA_BACK_GRPC": 33156,
+    "PORT_WA_MAP_STATIC_OWNER": 33150,
+    "_internal_plain_backends": "play-http=43157(c3000)·play-ws=43159(c3001)·map-storage=43151·icon=43152·uploader=43153"
+  },
+  "fixed_third_party": {
+    "_note": "변경 불가(제3자 고정)",
+    "COMFY_GATEWAY": "studio.example.com:8190 (Owner 제공 OpenAI-호환 게이트웨이; 원 spec 8188 raw ComfyUI 대체)",
+    "WA_BACK_GRPC": 50051,
+    "REDIS_SENTINEL": 26379
+  },
+  "legacy_current": {
+    "_note": "현 라이브 포트 — P1-S8에서 config/app.env(EnvironmentFile)로 전환. 신규 대역 이전은 후속 단계.",
+    "web": 33006,
+    "knowledge": 8810,
+    "orch": 28202
+  }
+}

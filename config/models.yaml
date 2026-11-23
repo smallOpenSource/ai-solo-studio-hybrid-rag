@@ -1,0 +1,16 @@
+- alias: qwen3.6-35b-a3b
+  is_reasoning: true
+  max_tokens: 1024
+  notes: 주모델 Q4_K_XL
+  supports_thinking_off: true
+- alias: default
+  is_reasoning: true
+  max_tokens: 1024
+  notes: 재실행성 데모 — llama-swap 'default' 별칭 (코드 수정 0)
+  supports_thinking_off: null
+- alias: gemma-4-e4b-it
+  is_reasoning: true
+  max_tokens: 1024
+  notes: '비교 모델 — 멀티모달 E4B (UD-Q4_K_XL). probe: 기본 thinking ON(변형B 1006자), enable_thinking=false로
+    억제 가능'
+  supports_thinking_off: true

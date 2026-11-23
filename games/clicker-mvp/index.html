@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>픽셀 클리커 MVP</title>
+<style>
+  html, body { margin: 0; background: #1a1a2e; color: #e0e0e0; font-family: monospace; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존·intrinsic 480×320 상한)·더블탭 줌/300ms 지연 차단 */
+  #game { display: block; margin: 16px auto; max-width: 96vw; height: auto; background: #0f0f1e; border: 2px solid #39ff14; image-rendering: pixelated; touch-action: manipulation; }
+  p { text-align: center; color: #888; }
+  #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #555; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+<canvas id="game" width="480" height="320"></canvas>
+<p>클릭 영역을 누르면 코인이 쌓이고, "커서 강화"로 클릭당 코인이 늘어납니다.</p>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단) ──────────────────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.25, noteDur: 0.18,
+    bgm: [523, 659, 784, 659, 587, 698, 880, 698],            // C E G E · D F A F (경쾌)
+    sfx: function (au) {
+      return {
+        click: function () { au.tone(660, 0.06, "square", 0.45); },
+        upgrade: function () { au.chord([523, 880], 0.12, "square", 0.5, 70); },
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; } };
+
+  // ── 결정론 상태 (RNG 없음·외부 의존 0) ─────────────────────────────
+  // 계약 = vault/specs/p25-clicker-mvp.md(handoff 브리프) / vault/game-design/gdd.md 와 1:1.
+  var state = { score: 0, clicks: 0, clickPower: 1, upgrades: 0, stage: 0 };
+  var UPGRADE_COST = 10;          // gdd: upgrade cost=10(고정·결정론)
+  var STAGE1_AT = 50;             // gdd: stage 0->1 when score>=50
+
+  window.__gameState = state;     // 테스트훅(헤드리스 상태 단언)
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var CLICK_AREA = { x: 20, y: 80, w: 300, h: 220 };
+  var BTN = { x: 340, y: 120, w: 120, h: 60 };
+
+  function updateStage() {         // stage: 1 when score>=50 else 0
+    state.stage = state.score >= STAGE1_AT ? 1 : 0;
+  }
+
+  function doClick() {             // click: clicks+=1; score+=clickPower
+    A.play("click");
+    state.clicks += 1;
+    state.score += state.clickPower;
+    updateStage();
+    render();
+  }
+
+  function buyUpgrade() {          // upgrade: require score>=10; score-=10 AND clickPower+=1 AND upgrades+=1
+    if (state.score < UPGRADE_COST) return false;
+    state.score -= UPGRADE_COST;
+    state.clickPower += 1;
+    state.upgrades += 1;
+    A.play("upgrade");
+    updateStage();
+    render();
+    return true;
+  }
+
+  // 헤드리스 테스트 API — Canvas 실클릭과 **동일 로직**(QA가 page.evaluate 로 구동).
+  window.__click = doClick;
+  window.__buyUpgrade = buyUpgrade;
+
+  function inRect(x, y, r) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+
+  // Pointer Events = 마우스·펜·터치 단일 경로(PointerEvent 가 clientX/Y 상속). ★CSS 스케일 보정:
+  // 캔버스가 max-width 로 축소되면 rect.width≠canvas.width → (client-rect)에 비율(canvas/rect)을
+  // 곱해야 캔버스 내부 좌표가 맞다(naive 차감은 축소 시 적중점이 어긋남).
+  canvas.addEventListener("pointerdown", function (e) {
+    A.unlock();                                               // 첫 제스처서 오디오 unlock(autoplay 정책)
+    var rect = canvas.getBoundingClientRect();
+    var sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+    var x = (e.clientX - rect.left) * sx, y = (e.clientY - rect.top) * sy;
+    if (inRect(x, y, BTN)) buyUpgrade();
+    else if (inRect(x, y, CLICK_AREA)) doClick();
+  });
+
+  function render() {
+    ctx.fillStyle = "#0f0f1e"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#16213e"; ctx.fillRect(CLICK_AREA.x, CLICK_AREA.y, CLICK_AREA.w, CLICK_AREA.h);
+    ctx.fillStyle = "#39ff14"; ctx.font = "20px monospace";
+    ctx.fillText("CLICK!", CLICK_AREA.x + 110, CLICK_AREA.y + 115);
+
+    ctx.fillStyle = state.score >= UPGRADE_COST ? "#e94560" : "#553333";
+    ctx.fillRect(BTN.x, BTN.y, BTN.w, BTN.h);
+    ctx.fillStyle = "#ffffff"; ctx.font = "12px monospace";
+    ctx.fillText("커서 강화 (" + UPGRADE_COST + ")", BTN.x + 8, BTN.y + 34);
+
+    ctx.fillStyle = "#e0e0e0"; ctx.font = "14px monospace";
+    ctx.fillText("score: " + state.score, 20, 30);
+    ctx.fillText("clickPower: " + state.clickPower, 20, 52);
+    ctx.fillText("clicks: " + state.clicks, 200, 30);
+    ctx.fillText("upgrades: " + state.upgrades, 200, 52);
+    ctx.fillText("stage: " + state.stage, 360, 30);
+  }
+
+  render();
+
+  // 뮤트 버튼: 첫 탭=사운드 켜기(unlock)·이후=뮤트 토글.
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+})();
+</script>
+</body>
+</html>

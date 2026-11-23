@@ -1,0 +1,48 @@
+# 도구별 위험 정책 — 위험기반 게이팅 (계획 §4.3, v5.1 §4.3)
+# 등급: always-allow(자동 허용) / needs-approval(사람 승인 필요) / block(금지)
+# when: 게이팅 술어 이름 — office/gating.py 의 WHEN_PREDICATES 레지스트리 키.
+#       술어는 도구 호출 요청(이름+인자)을 받아 "멈춰 세울지"를 참/거짓으로 답한다.
+#       생략 시 등급만으로 판정(needs-approval이면 무조건 승인 요구).
+
+tools:
+  # 읽기 전용 조회 — 저위험, 자동 허용
+  crm_get_customer:
+    risk: always-allow
+  order_get_latest:
+    risk: always-allow
+  knowledge_search:
+    risk: always-allow
+
+  # 발송 = 비가역(외부 부수효과) — 사람 승인 필요
+  email_send:
+    risk: needs-approval
+    when: always_interrupt   # 항상 멈춤 (Plan Mode 일괄 승인 시에만 통과)
+
+  # 금지 예시 — 어떤 승인으로도 실행 불가 (Plan Mode 로도 통과 불가)
+  db_drop_table:
+    risk: block
+
+  # 테스트 전용 — agent 격리 워크플로(agent_smoke)의 비가역 HITL 실증용 mock 도구.
+  # 가역 도구만으론 always-allow라 suspend 경로가 없어, needs-approval 1개로 agent의
+  # "비가역 만남→interrupt→suspend→승인→resume(G-RESTART)"를 실증한다. crm 정책 무변.
+  agent_action:
+    risk: needs-approval
+    when: always_interrupt
+
+  # game/ 로컬 파일쓰기 = 가역(외부 부수효과 0) → always-allow. 미등록 시
+  # default_risk=needs-approval로 매 쓰기 suspend(게임제작 파이프라인 정지).
+  game_data_write:
+    risk: always-allow
+
+  # game/ 로컬 파일읽기 = 읽기전용·가역 → always-allow. 단계간 데이터 계약
+  # (이전 단계 산출 파일 읽기)에 쓰인다. 미등록 시 매 읽기 suspend로 파이프라인 정지.
+  game_data_read:
+    risk: always-allow
+
+  # game/data 스키마 검증 = 읽기전용·가역 → always-allow. game_qa 결정론 게이트가
+  # 호출한다. 미등록 시 매 검증 suspend로 QA 파이프라인 정지.
+  game_validate:
+    risk: always-allow
+
+# 미등록 도구의 기본 등급 — 안전 우선 (모르는 도구는 승인 요구)
+default_risk: needs-approval

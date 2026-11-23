@@ -1,0 +1,9 @@
+앞에서 설계한 업그레이드 수치를 game/data/upgrades.json 파일로 기록해라. game_data_write 도구를 호출하되 path는 "data/upgrades.json", content는 아래 형태의 JSON 객체로 만들어라:
+
+{
+  "upgrades": [
+    { "id": "<문자열>", "name": "<문자열>", "stat": "<문자열>", "delta": <수치>, "cap": <수치> }
+  ]
+}
+
+upgrades 배열은 최소 3개여야 한다. stat은 업그레이드가 올리는 능력치 이름(예: damage·speed·fireRate), delta는 1회 증가량, cap은 상한값이다.

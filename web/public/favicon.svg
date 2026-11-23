@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- Nexus 도트 모노그램 — 다크 배경 + gold/green 픽셀(NO PURPLE). -->
+  <rect width="16" height="16" fill="#1A1A1A"/>
+  <!-- gold 외곽 베벨(상/좌 하이라이트) -->
+  <rect x="1" y="1" width="14" height="1" fill="#F4C542"/>
+  <rect x="1" y="1" width="1" height="14" fill="#F4C542"/>
+  <!-- "A" 도트 글리프(Agent) — green 픽셀 -->
+  <rect x="6" y="3" width="4" height="1" fill="#39FF14"/>
+  <rect x="5" y="4" width="1" height="1" fill="#39FF14"/>
+  <rect x="10" y="4" width="1" height="1" fill="#39FF14"/>
+  <rect x="5" y="5" width="1" height="1" fill="#39FF14"/>
+  <rect x="10" y="5" width="1" height="1" fill="#39FF14"/>
+  <rect x="5" y="6" width="6" height="1" fill="#39FF14"/>
+  <rect x="5" y="7" width="1" height="1" fill="#39FF14"/>
+  <rect x="10" y="7" width="1" height="1" fill="#39FF14"/>
+  <rect x="5" y="8" width="1" height="1" fill="#39FF14"/>
+  <rect x="10" y="8" width="1" height="1" fill="#39FF14"/>
+  <rect x="5" y="9" width="1" height="1" fill="#39FF14"/>
+  <rect x="10" y="9" width="1" height="1" fill="#39FF14"/>
+  <!-- gold 하단 데이터 라인(터미널 무드) -->
+  <rect x="4" y="12" width="8" height="1" fill="#F4C542"/>
+</svg>

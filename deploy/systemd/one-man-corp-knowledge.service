@@ -1,0 +1,24 @@
+[Unit]
+Description=one_man_corp knowledge HTTP search service (qdrant single-owner · 127.0.0.1:8810)
+Documentation=file:///opt/studio/scripts/serve_knowledge.sh
+# 폭주 방지: 300초 내 5회 초과 재기동 시 systemd가 포기(failed).
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/studio
+# knowledge conda env python 직접 exec(conda run 회피·제약#3). core.config가 endpoint.yaml+.env를
+# _PROJECT_ROOT 기준 자체 로드(EnvironmentFile 불필요). ★state/qdrant 단일 소유자(H-13) →
+# uvicorn --workers 1 고정. host/port=endpoint.yaml knowledge.service(현 127.0.0.1:8810).
+ExecStart=/opt/conda/envs/one_man_corp-knowledge/bin/python -m uvicorn knowledge.service:app --workers 1 --host 127.0.0.1 --port 8810
+# ★도입 목적(SPOF 제거): 비정상 종료 시 자동 재기동. 정상 SIGTERM은 systemd가 success 처리.
+Restart=on-failure
+RestartSec=5
+# graceful SIGTERM → uvicorn 종료 → qdrant store close(state/qdrant 파일락 해제). 새 인스턴스가
+# 락을 열려면 구 프로세스가 완전히 죽어야 함("already accessed" 방지) → 넉넉한 정지 타임아웃.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

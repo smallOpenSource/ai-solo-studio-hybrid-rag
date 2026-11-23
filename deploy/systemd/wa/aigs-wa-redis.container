@@ -1,0 +1,20 @@
+# SR/renewal §9.1 — WorkAdventure `redis` 브릭 (rootless Podman Quadlet·비수정 공식 redis:6).
+# ★pusher(play)↔redis pub/sub·back 변수 저장의 내부 redis(결정④ 로컬 프로브 대상). 내부 전용
+#   (PublishPort 없음·호스트 비노출). ★주의: 이 redis 는 WA 전용 — AIGS state_store 의 별도
+#   Sentinel redis(ports.json REDIS_SENTINEL=26379)와 분리(혼동 금지).
+[Unit]
+Description=AIGS WorkAdventure redis (pub/sub·variables·internal only)
+Wants=aigs-wa-network.service
+After=aigs-wa-network.service
+
+[Container]
+Image=docker.io/library/redis:6
+Network=aigs-wa.network
+Volume=aigs-wa-redisdata.volume:/data
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

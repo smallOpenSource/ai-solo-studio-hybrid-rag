@@ -1,0 +1,33 @@
+[Unit]
+Description=one_man_corp orch core (LangGraph+OTEL renewal core · FastAPI · 127.0.0.1:28202)
+Documentation=file:///opt/studio/.omc/plans/ralplan-renewal-core-swap.md
+# 부팅 순서: knowledge 검색 서비스 뒤(orch stage_research 가 knowledge :8810 프록시 의존·soft ordering).
+After=one-man-corp-knowledge.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/studio
+# orch conda env python 직접 exec(conda run 회피). orch.app __main__ 가 uvicorn 으로
+# 127.0.0.1:28202 단일 바인드(코드에 _HOST/_PORT 박제). PYTHONPATH=repo 루트로 orch/office
+# 패키지 임포트. .env 는 orch/graph.py 가 자체 stdlib 로더(os.environ.setdefault·기존 env 우선)로
+# 읽지만, BENCH/BGE 게이트웨이 키 가용성 보장을 위해 EnvironmentFile 로도 주입(중복 무해).
+Environment=PYTHONPATH=/opt/studio
+EnvironmentFile=/opt/studio/.env
+# ★A2(Redis Sentinel async 활성): orch 가 로드하는 .env 에는 REDIS_ENABLED 가 없다(config/app.env
+# 에만 존재) → 라이브 orch 는 state_store(async Sentinel 소비자)가 disabled 였다. redis_client
+# ._load_env_local 가 os.environ 의 REDIS_* 를 overlay 하므로 .env 시크릿 파일을 건드리지 않고
+# 여기서 플래그만 주입한다(나머지 REDIS_* 는 .env 에 이미 존재). 롤백=이 줄 삭제 후 restart.
+Environment=REDIS_ENABLED=true
+ExecStart=/opt/conda/envs/orch/bin/python -m orch.app
+# ★도입 목적(renewal 권위 코어): 비정상 종료 시 자동 재기동. 정상 SIGTERM 은 systemd success 처리.
+Restart=on-failure
+RestartSec=5
+# uvicorn graceful shutdown 이 장수명 SSE 연결을 기다릴 수 있어 짧은 타임아웃 후 SIGKILL.
+# orch 체크포인트는 자체 ckpt db(구 office.db 무관) → 재기동 시 무손실 재수렴.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

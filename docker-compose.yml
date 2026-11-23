@@ -1,0 +1,14 @@
+# 지식 레이어용 Qdrant 단일 노드.
+# config/endpoint.yaml 의 knowledge.qdrant_url(http://127.0.0.1:2811)과 포트를 맞춤.
+services:
+  qdrant:
+    image: qdrant/qdrant:latest  # 원본 프로젝트 기준. 재현성이 필요하면 태그를 고정할 것
+    ports:
+      - "127.0.0.1:2811:6333"
+      - "127.0.0.1:2812:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:

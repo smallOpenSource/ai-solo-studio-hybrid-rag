@@ -1,0 +1,8 @@
+앞 단계 game_validate 결과를 바탕으로 QA 리포트를 game/data/qa_report.json 파일로 기록해라. game_data_write 도구를 호출하되 path는 "data/qa_report.json", content는 아래 형태의 JSON 객체로 만들어라:
+
+{
+  "pass": <검증 ok가 true면 true, 아니면 false>,
+  "errors": [<game_validate가 돌려준 errors 배열 — 통과면 빈 배열>]
+}
+
+검증이 통과했으면 pass:true·errors:[], 실패했으면 pass:false와 실패 사유(errors)를 그대로 기록해라.

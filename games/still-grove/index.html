@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>고요한 숲 — Still Grove</title>
+<style>
+  html, body { margin: 0; background: #0e1a12; color: #dceede; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존)·캔버스가 탭을 소유(페이지 스크롤·줌 차단·접근성 우선) */
+  #game { display: block; margin: 14px auto; max-width: 96vw; height: auto; background: #0a140d; border: 2px solid #5fae6f; image-rendering: pixelated; touch-action: none; }
+  p { text-align: center; color: #8fb89a; margin: 8px 16px; font-size: 13px; }
+  #hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; pointer-events: none; z-index: 10; }
+  #hud button { pointer-events: auto; font-family: monospace; font-size: 16px; background: #122017; color: #dceede; border: 1px solid #5fae6f; border-radius: 6px; padding: 6px 12px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <button id="reset" type="button" aria-label="정원 처음부터">처음부터 ↺</button>
+  <button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+</div>
+<canvas id="game" width="480" height="360"></canvas>
+<!-- ★차별: 타이머·점수·실패가 구조적으로 부재(=기능). 탭으로 천천히 돌보면 성장이 창발한다. -->
+<p>풀밭의 한 칸을 탭하면 씨앗이 새싹으로, 새싹이 꽃으로 자랍니다. 시간제한도·점수도·실패도 없습니다 — 마음대로, 천천히 돌보세요.</p>
+<p id="serene" aria-live="polite"></p>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단) ──────────────────
+  //   잔잔한 자연 톤. 진행압박 없는 앰비언트(웰니스). 미unlock 시 전부 no-op(비차단).
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.16, noteDur: 0.5,
+    bgm: [294, 0, 392, 0, 440, 0, 392, 0, 330, 0, 392, 0],      // D _ G _ A _ G _ E _ G _ (고요·무압박)
+    sfx: function (au) {
+      return {
+        tend:  function () { au.tone(523, 0.10, "sine", 0.4); },               // 돌봄(부드러운 물방울)
+        bloom: function () { au.chord([523, 659, 784], 0.5, "triangle", 0.4, 120); }, // 개화(따뜻한 화음)
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; }, ambient: function () {} };
+
+  // ── 결정론 상수 (계약 = vault/specs/still-grove.md · brief 파생·drift 단언용) ──────
+  //   STAGE_CAP=2: 씨앗(0)→새싹(1)→개화(2 cap). TILE_COUNT=6: 3열×2행 정원.
+  var STAGE_CAP = 2;
+  var TILE_COUNT = 6;
+  window.__constants = { STAGE_CAP: STAGE_CAP, TILE_COUNT: TILE_COUNT };   // 하네스 drift 단언(brief↔게임)
+
+  // ── 정원 칸 데이터(자연 요소 6종·결정론·RNG 없음·wall-clock 없음) ────────────────
+  //   각 칸 = { id, kind, label(단계별 표시), bloomColor }. stage 는 state.tiles 가 보유.
+  var PLOTS = [
+    { kind: "camellia", name: "동백", bloomColor: "#e2607a" },
+    { kind: "moss",     name: "이끼", bloomColor: "#7fc06a" },
+    { kind: "fern",     name: "고사리", bloomColor: "#6fb59a" },
+    { kind: "lotus",    name: "연꽃", bloomColor: "#e6a3d0" },
+    { kind: "wildflower", name: "들꽃", bloomColor: "#e6c85e" },
+    { kind: "maple",    name: "단풍", bloomColor: "#e08a4e" }
+  ];
+  var STAGE_NAME = ["씨앗", "새싹", "개화"];   // stage 0/1/2 표시(STAGE_CAP+1 항목)
+
+  // ── 결정론 상태 + 테스트 훅 ────────────────────────────────────────────────────
+  //   state_shape = brief 와 1:1. ★no-fail: fail/gameover/lose/penalty/strike/timer 류 필드 부재(역전 anti-hollow).
+  //   각 타일 stage=0(씨앗)·blooms=0·serenity=false 로 시작. wall-clock 필드 없음(시간 감쇠 0).
+  var tiles = PLOTS.map(function (p, i) {
+    return { id: i, kind: p.kind, name: p.name, stage: 0 };   // stage = tend 호출 횟수의 함수(0..STAGE_CAP)
+  });
+  var state = { tiles: tiles, blooms: 0, serenity: false };
+  window.__state = state;        // 테스트훅(헤드리스 상태 단언)
+
+  function tileById(id) {
+    for (var i = 0; i < state.tiles.length; i++) { if (state.tiles[i].id === id) return state.tiles[i]; }
+    return null;
+  }
+
+  // blooms·serenity 는 **타일 stage 분포에서 순수 재계산**(direct-set forbidden·단일 카운터 불가).
+  //   blooms = stage>=cap 인 타일 수. serenity = 전 타일 개화(blooms==TILE_COUNT). 승/패 아님·단순 상태.
+  function recompute() {
+    var b = 0;
+    for (var i = 0; i < state.tiles.length; i++) { if (state.tiles[i].stage >= STAGE_CAP) b += 1; }
+    state.blooms = b;
+    state.serenity = state.tiles.length > 0 && b === state.tiles.length;
+  }
+
+  // ── 핵심 차별 루프: 돌봄(tend) → 성장 창발. 실패/패널티/감소 경로 **구조적 부재**. ──────
+  //   __tend(tileId): 그 칸 stage 를 +1(STAGE_CAP 에서 클램프). 무효 id·cap 초과 = **no-op**
+  //   (감소·패널티·실패 없음 — 전진 또는 무변화뿐). stage 는 tend 횟수에서 창발(직접세팅 금지).
+  function tend(tileId) {
+    var t = tileById(tileId);
+    if (!t) return false;                       // 무효 tileId → no-op(패널티 0·상태 불변)
+    if (t.stage >= STAGE_CAP) { render(); return false; }   // 이미 개화 → no-op(감소 없음·패널티 0)
+    t.stage += 1;                               // 전진(창발: stage == 이 칸 tend 횟수, cap 클램프)
+    recompute();                                // blooms·serenity 는 stage 분포에서 순수 재계산
+    A.play(t.stage >= STAGE_CAP ? "bloom" : "tend");
+    render();
+    return true;
+  }
+
+  // 정원 초기화: 전 칸 stage=0·blooms 0·serenity false(런 간 깨끗이 시작). 실패/되돌림 아님 — 다시 돌보기.
+  function resetGame() {
+    for (var i = 0; i < state.tiles.length; i++) { state.tiles[i].stage = 0; }
+    recompute();
+    render();
+  }
+
+  // 헤드리스 테스트 API — Canvas 실입력과 **동일 로직**(QA 가 page.evaluate 로 구동·우회 아님).
+  window.__tend = tend;
+  window.__resetGame = resetGame;
+
+  // ── 격자 좌표(캔버스 좌표·3열×2행 공유 그리드·고정·reflow 없음 → QA 결정론) ──────────
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var COLS = 3, ROWS = 2, TW = 138, TH = 124, GX = 12, GY = 12, OX = 18, OY = 64;
+  function tileRect(i) {
+    var c = i % COLS, r = Math.floor(i / COLS);
+    return { x: OX + c * (TW + GX), y: OY + r * (TH + GY), w: TW, h: TH };
+  }
+  // QA 구동 훅(좌표) — 단언은 항상 __tend/실입력 경유(우회 아님).
+  window.__geom = function () {
+    var rects = {};
+    for (var i = 0; i < state.tiles.length; i++) { var rr = tileRect(i); rects[state.tiles[i].id] = { x: rr.x, y: rr.y, w: rr.w, h: rr.h }; }
+    return { canvas: { w: canvas.width, h: canvas.height }, tiles: rects };
+  };
+
+  // ── 입력: Pointer Events 단일 경로(마우스+펜+터치) + CSS 스케일 보정 ──────────────
+  //   캔버스가 max-width 로 축소되면 rect.width≠canvas.width → 비율(canvas/rect)을 곱해야 적중점이 맞다.
+  function toCanvas(e) {
+    var r = canvas.getBoundingClientRect();
+    var sx = canvas.width / r.width, sy = canvas.height / r.height;
+    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+  }
+  function inRect(x, y, r) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  function tileAt(x, y) {
+    for (var i = 0; i < state.tiles.length; i++) { if (inRect(x, y, tileRect(i))) return state.tiles[i].id; }
+    return null;
+  }
+  canvas.addEventListener("pointerdown", function (e) {
+    A.unlock();                                 // 첫 제스처서 오디오 unlock(autoplay 정책)
+    var p = toCanvas(e);
+    var id = tileAt(p.x, p.y);
+    if (id != null) tend(id);                   // 칸 탭 → 돌봄(성장). 빈 곳 탭 = no-op(패널티 없음).
+  });
+
+  // ── HTML 버튼: 처음부터·음소거 ──────────────────────────────────────────────────
+  var resetBtn = document.getElementById("reset");
+  if (resetBtn) resetBtn.addEventListener("click", function () { A.unlock(); resetGame(); });
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+  var sereneEl = document.getElementById("serene");
+
+  // ── 렌더(요청 시에만 — init·tend·reset. 애니메이션 루프 없음·wall-clock 0·결정론) ──────
+  function drawSeed(cx, cy, color) {            // stage 0: 흙 위 작은 씨앗
+    ctx.fillStyle = "#7a5a3a"; ctx.beginPath(); ctx.ellipse(cx, cy + 6, 8, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(cx, cy, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  function drawSprout(cx, cy, color) {         // stage 1: 새싹(줄기 + 잎 2)
+    ctx.strokeStyle = "#5aa05a"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx, cy + 18); ctx.lineTo(cx, cy - 12); ctx.stroke();
+    ctx.fillStyle = "#6fb56f";
+    ctx.beginPath(); ctx.ellipse(cx - 9, cy - 2, 9, 5, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + 9, cy - 8, 9, 5, 0.5, 0, Math.PI * 2); ctx.fill();
+  }
+  function drawBloom(cx, cy, color) {          // stage 2: 개화(부드러운 글로우 + 꽃잎·정적)
+    var g = ctx.createRadialGradient(cx, cy - 6, 2, cx, cy - 6, 30);
+    g.addColorStop(0, "rgba(255,255,255,0.25)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy - 6, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#5aa05a"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx, cy + 20); ctx.lineTo(cx, cy - 4); ctx.stroke();
+    ctx.fillStyle = color;
+    for (var k = 0; k < 6; k++) {
+      var a = k * Math.PI / 3;
+      ctx.beginPath(); ctx.ellipse(cx + Math.cos(a) * 9, cy - 6 + Math.sin(a) * 9, 6, 9, a, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = "#fff6cf"; ctx.beginPath(); ctx.arc(cx, cy - 6, 5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function render() {
+    // 배경(고요한 숲 그라데이션·정적)
+    var bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, "#0d1b12"); bg.addColorStop(1, "#0a140d");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 헤더(★점수·타이머·실패 표시 없음 — 오직 개화 수 = 부드러운 진행감, 압박 아님)
+    ctx.fillStyle = "#bfe0c6"; ctx.font = "15px monospace"; ctx.textAlign = "left";
+    ctx.fillText("고요한 숲", 96, 26);
+    ctx.fillStyle = "#8fb89a"; ctx.textAlign = "right";
+    ctx.fillText("개화 " + state.blooms + "/" + state.tiles.length, canvas.width - 70, 26);
+    ctx.textAlign = "left";
+
+    // 정원 칸
+    for (var i = 0; i < state.tiles.length; i++) {
+      var t = state.tiles[i], r = tileRect(i), p = PLOTS[i];
+      // 흙/풀밭 칸(단계가 오를수록 약간 더 푸르게 — 정적 색)
+      var shade = ["#1d2a1f", "#22351f", "#284a2b"][t.stage];
+      ctx.fillStyle = shade; ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.strokeStyle = "#3c5a40"; ctx.lineWidth = 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+      // 식물(단계별)
+      var cx = r.x + r.w / 2, cy = r.y + r.h / 2 + 6;
+      if (t.stage === 0) drawSeed(cx, cy, p.bloomColor);
+      else if (t.stage === 1) drawSprout(cx, cy, p.bloomColor);
+      else drawBloom(cx, cy, p.bloomColor);
+      // 라벨(이름 + 단계)
+      ctx.fillStyle = "#9ec4a6"; ctx.font = "12px monospace"; ctx.textAlign = "center";
+      ctx.fillText(t.name + " · " + STAGE_NAME[t.stage], cx, r.y + r.h - 10);
+      ctx.textAlign = "left";
+    }
+
+    // 평온(상태·승패 아님): 전 칸 개화 시 잔잔한 메시지(DOM·캔버스 양쪽 소비)
+    if (sereneEl) sereneEl.textContent = state.serenity ? "🌿 온 정원이 피어났습니다. 그저 머물러 바라보세요." : "";
+    if (state.serenity) {
+      ctx.fillStyle = "#cfe9c0"; ctx.font = "13px monospace"; ctx.textAlign = "center";
+      ctx.fillText("— 평온 —", canvas.width / 2, canvas.height - 8);
+      ctx.textAlign = "left";
+    }
+  }
+
+  // ── init(요청 렌더 1회·루프 없음) ──────────────────────────────────────────────
+  recompute();
+  render();
+})();
+</script>
+</body>
+</html>

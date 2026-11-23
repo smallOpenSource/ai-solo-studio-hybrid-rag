@@ -1,0 +1,31 @@
+# 빌드 산출물
+dist/
+dist-ssr/
+
+# 의존성(npm install로 재현 가능)
+node_modules/
+
+# 로컬 환경 파일
+.env.local
+.env.*.local
+
+# 에디터 캐시
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vitest 캐시
+.vitest/
+
+# Playwright e2e 산출물(US-008 트랙 A) — 리포트·트레이스·스크린샷
+test-results/
+playwright-report/
+playwright/.cache/

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>슬라이딩 타일 퍼즐</title>
+<style>
+  html, body { margin: 0; background: #0f1f2e; color: #e0e0e0; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존)·캔버스는 touch-action:none 으로 스와이프 소유(페이지 스크롤/줌 차단) */
+  #game { display: block; margin: 16px auto; max-width: 96vw; height: auto; background: #0a1622; border: 2px solid #2bd4a7; image-rendering: pixelated; touch-action: none; }
+  p { text-align: center; color: #7c99a6; }
+  #controls { text-align: center; margin: 8px auto 20px; }
+  #reshuffle { font-family: monospace; font-size: 16px; color: #06241b; background: #2bd4a7; border: none; border-radius: 6px; padding: 10px 22px; touch-action: manipulation; cursor: pointer; }
+  #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #0f1f2e; color: #e0e0e0; border: 1px solid #2bd4a7; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+<canvas id="game" width="360" height="430"></canvas>
+<p>타일을 탭/클릭하거나, 스와이프(모바일)·방향키(PC)로 빈 칸을 밀어 1→8 정렬을 완성하세요.</p>
+<div id="controls"><button id="reshuffle" type="button">다시 셔플</button></div>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단) ──────────────────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.22, noteDur: 0.3,
+    bgm: [392, 0, 494, 0, 440, 0, 587, 0],                    // G _ B _ A _ D _ (잔잔)
+    sfx: function (au) {
+      return {
+        move: function () { au.tone(330, 0.05, "triangle", 0.5); },
+        solve: function () { au.chord([523, 659, 784, 1047], 0.16, "square", 0.5, 110); },
+        shuffle: function () { au.noise(0.12, 0.3); },
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; } };
+
+  // ── 결정론 상태 (시드 고정 RNG·외부 의존 0) ───────────────────────────────────
+  // 계약 = vault/specs/p5-slide-puzzle.md(handoff 브리프) / vault/game-design/gdd-slide-puzzle.md 와 1:1.
+  var SIZE = 3;                                  // gdd: size=3 (3×3·9칸)
+  var BLANK = 0;                                 // 빈칸 sentinel(값 0)
+  var GOAL = [1, 2, 3, 4, 5, 6, 7, 8, BLANK];    // gdd: goal_order = 1..8, blank-last
+  var SEED = 12345;                              // gdd: 시드 고정(재현·결정론)
+  var SHUFFLE_MOVES = 60;                        // 정렬 상태에서 합법 역셔플 횟수(solvable 보장)
+
+  var state = { tiles: GOAL.slice(), moves: 0, solved: false, size: SIZE };
+  window.__gameState = state;                    // 테스트훅(헤드리스 상태 단언)
+
+  // 시드 고정 PRNG(mulberry32·인라인·비결정 RNG 미사용 → 결정론·재현).
+  function makePRNG(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function blankIndex() { return state.tiles.indexOf(BLANK); }
+
+  // 빈칸에 상하좌우로 인접한 타일 인덱스 목록(대각선·비인접 제외).
+  function neighborsOfBlank() {
+    var b = blankIndex();
+    var r = Math.floor(b / SIZE), c = b % SIZE;
+    var out = [];
+    if (r > 0) out.push(b - SIZE);          // 위
+    if (r < SIZE - 1) out.push(b + SIZE);   // 아래
+    if (c > 0) out.push(b - 1);             // 왼쪽
+    if (c < SIZE - 1) out.push(b + 1);      // 오른쪽
+    return out;
+  }
+
+  function isSolved(arr) {
+    for (var i = 0; i < arr.length; i++) if (arr[i] !== GOAL[i]) return false;
+    return true;
+  }
+
+  // 핵심 액션: 인덱스 idx 의 타일을 빈칸과 swap(빈칸 인접일 때만). 유효 이동이면 true.
+  // 결합 불변식(M-1): 유효 이동 = moves+=1 AND tiles 배열 실변경 AND 빈칸-인접만.
+  function moveTile(idx) {
+    if (state.solved) return false;                 // 승리 후 잠금(solved 1회 전이 보장)
+    var b = blankIndex();
+    if (neighborsOfBlank().indexOf(idx) === -1) return false;  // 비인접 → no-op(moves 불변)
+    state.tiles[b] = state.tiles[idx];              // 타일을 빈칸으로
+    state.tiles[idx] = BLANK;                       // 원자리는 빈칸
+    state.moves += 1;                               // 이동수 엄격증가
+    A.play("move");
+    if (isSolved(state.tiles)) { state.solved = true; A.play("solve"); } // 정렬 완성 시 false->true(1회)
+    render();
+    return true;
+  }
+
+  // 방향 입력: 빈칸을 dir 방향으로 "민다" = 그 방향의 인접 타일을 빈칸으로 이동.
+  // dir: 'up'|'down'|'left'|'right' (빈칸이 이동할 방향).
+  function moveDir(dir) {
+    var b = blankIndex();
+    var r = Math.floor(b / SIZE), c = b % SIZE;
+    var target = -1;
+    if (dir === "up" && r < SIZE - 1) target = b + SIZE;     // 빈칸이 위로 = 아래 타일이 내려옴
+    else if (dir === "down" && r > 0) target = b - SIZE;
+    else if (dir === "left" && c < SIZE - 1) target = b + 1; // 빈칸이 왼쪽 = 오른쪽 타일이 옴
+    else if (dir === "right" && c > 0) target = b - 1;
+    if (target === -1) return false;
+    return moveTile(target);
+  }
+
+  // 결정론 셔플: 정렬 상태에서 시작해 합법 이동으로만 N회 이동 → 항상 solvable.
+  // 시드 고정이라 재로드 시 동일 보드(재현). 셔플은 moves 카운터에 포함하지 않음(init 후 moves=0).
+  function shuffle() {
+    var rng = makePRNG(SEED);
+    state.tiles = GOAL.slice();
+    state.solved = false;
+    var prevBlank = -1;
+    for (var k = 0; k < SHUFFLE_MOVES; k++) {
+      var nb = neighborsOfBlank();
+      // 직전 빈칸 위치로 되돌리는 이동은 피해 더 잘 섞이게(여전히 합법·solvable).
+      var choices = nb.filter(function (x) { return x !== prevBlank; });
+      if (choices.length === 0) choices = nb;
+      var b = blankIndex();
+      var pick = choices[Math.floor(rng() * choices.length)];
+      state.tiles[b] = state.tiles[pick];
+      state.tiles[pick] = BLANK;
+      prevBlank = b;
+    }
+    // 우연히 정렬로 셔플됐으면 한 번 더 이동(init 은 solved=false 계약).
+    if (isSolved(state.tiles)) {
+      var nb2 = neighborsOfBlank();
+      var b2 = blankIndex();
+      state.tiles[b2] = state.tiles[nb2[0]];
+      state.tiles[nb2[0]] = BLANK;
+    }
+    state.moves = 0;            // init: moves=0
+    state.solved = false;       // init: solved=false
+    A.play("shuffle");
+    render();
+  }
+
+  // 헤드리스 테스트 API — Canvas 실입력과 **동일 로직**(QA가 page.evaluate 로 구동).
+  window.__move = moveTile;        // 타일 인덱스로 이동(클릭 경로와 동일)
+  window.__moveDir = moveDir;      // 방향으로 이동(키보드 경로와 동일)
+  window.__neighbors = neighborsOfBlank;  // 합법 이동 후보(QA 결정론 구동용)
+  window.__reshuffle = shuffle;
+
+  // ── 입력: Canvas 클릭 + 방향키 ────────────────────────────────────────────────
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var CELL = 110, PAD = 8, ORIGIN_Y = 50;
+
+  // 좌표 = CSS 스케일 보정(캔버스가 max-width 로 축소될 수 있음·비율 곱).
+  function toCanvas(e) {
+    var rect = canvas.getBoundingClientRect();
+    var sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+  }
+  // Pointer Events 단일 경로(마우스+터치). ★pointerup 에서 탭/스와이프 판별 → 이중발화 0:
+  //   이동량 ≤ SWIPE_MIN(클라 px) = 탭 → 시작 셀 타일 이동(기존 클릭 경로) / 초과 = 스와이프 →
+  //   우세축 방향 moveDir(방향키 대체·2048 keyboard_input_manager 기법·동일 4방향).
+  var SWIPE_MIN = 10;
+  var pStartCX = 0, pStartCY = 0, pCanvas = null;
+  canvas.addEventListener("pointerdown", function (e) {
+    A.unlock();                                               // 첫 제스처서 오디오 unlock(autoplay 정책)
+    pStartCX = e.clientX; pStartCY = e.clientY; pCanvas = toCanvas(e);
+  });
+  canvas.addEventListener("pointerup", function (e) {
+    if (!pCanvas) return;
+    var dxC = e.clientX - pStartCX, dyC = e.clientY - pStartCY;
+    if (Math.max(Math.abs(dxC), Math.abs(dyC)) > SWIPE_MIN) {
+      moveDir(Math.abs(dxC) > Math.abs(dyC) ? (dxC > 0 ? "right" : "left") : (dyC > 0 ? "down" : "up"));
+    } else {
+      var y = pCanvas.y - ORIGIN_Y;
+      if (y >= 0) {
+        var c = Math.floor(pCanvas.x / (CELL + PAD)), r = Math.floor(y / (CELL + PAD));
+        if (c >= 0 && c < SIZE && r >= 0 && r < SIZE) moveTile(r * SIZE + c);
+      }
+    }
+    pCanvas = null;
+  });
+  canvas.addEventListener("pointercancel", function () { pCanvas = null; });
+
+  // 방향키(PC) 유지.
+  window.addEventListener("keydown", function (e) {
+    var map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+    if (map[e.key]) { e.preventDefault(); moveDir(map[e.key]); }
+    else if (e.key === "r" || e.key === "R") shuffle();
+  });
+
+  // 화면 셔플 버튼(R 키 대체·모바일).
+  var reBtn = document.getElementById("reshuffle");
+  if (reBtn) reBtn.addEventListener("click", function () { A.unlock(); shuffle(); });
+
+  // 뮤트 버튼: 첫 탭=사운드 켜기(unlock)·이후=뮤트 토글.
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+
+  function render() {
+    ctx.fillStyle = "#0a1622"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#e0e0e0"; ctx.font = "16px monospace";
+    ctx.fillText("moves: " + state.moves, 12, 28);
+    ctx.fillStyle = state.solved ? "#2bd4a7" : "#7c99a6";
+    ctx.fillText(state.solved ? "SOLVED!" : "정렬 미완", 220, 28);
+
+    for (var i = 0; i < state.tiles.length; i++) {
+      var v = state.tiles[i];
+      var r = Math.floor(i / SIZE), c = i % SIZE;
+      var x = c * (CELL + PAD) + PAD, y = ORIGIN_Y + r * (CELL + PAD);
+      if (v === BLANK) {
+        ctx.fillStyle = "#0a1622"; ctx.fillRect(x, y, CELL, CELL);
+        continue;
+      }
+      // 타일 면(베벨·민트 그라디언트 — tile.svg 디자인의 절차적 Canvas 재현·tier2 폴백)
+      var grad = ctx.createLinearGradient(x, y, x, y + CELL);
+      grad.addColorStop(0, "#2bd4a7"); grad.addColorStop(1, "#159c78");
+      ctx.fillStyle = grad; ctx.fillRect(x, y, CELL, CELL);
+      ctx.fillStyle = "rgba(61,240,192,0.45)"; ctx.fillRect(x, y, CELL, 10);
+      ctx.strokeStyle = "#0a3a2c"; ctx.lineWidth = 3; ctx.strokeRect(x, y, CELL, CELL);
+      ctx.fillStyle = "#06241b"; ctx.font = "bold 48px monospace";
+      ctx.fillText(String(v), x + CELL / 2 - 14, y + CELL / 2 + 16);
+    }
+  }
+
+  shuffle();   // init: 시드 고정 셔플 → moves=0, solved=false, tiles=scrambled_solvable
+})();
+</script>
+</body>
+</html>

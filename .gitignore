@@ -1,0 +1,70 @@
+.env
+results/
+state/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+node_modules/
+.omc/logs/
+.omc/ultragoal/
+
+# --- P8 git 위생 (2026-06-16 개선 프로그램) ---
+# 런타임 가드 산출물(.sh 스크립트는 추적 유지·log/pid/target만 무시)
+.omc/guards/*.log
+.omc/guards/*.pid
+.omc/guards/*.target
+# OMC 런타임 세션 상태
+.omc/sessions/
+# 임시 작업물
+tmp/
+# work/ 생성 래스터 — 라이브 자산(1.png·2.png)·디자인 SoT(stitch)만 추적.
+# ★git에서 'work/'+'!work/1.png'는 무효 → 'work/*'+'!' 형태 필수(audit MUST-FIX).
+work/*
+!work/1.png
+!work/2.png
+!work/stitch/
+
+# --- US-7 네이티브 Windows 빌드 (2026-06-17) ---
+# Godot 4.3 toolchain (binary + Windows export template, ~188M): 다운로드 가능·
+# 버전 핀은 scripts/build_windows.sh에 박제. repo 비대화 방지 → 미추적.
+tools/godot/
+# 빌드 아티팩트(.exe ~84M·.pck): 산출물만 검증, git 미추적.
+build/
+# Godot 임포트 캐시 + 빌드시 복사된 데이터(game/data/meta.json의 read-only 사본).
+game/native/.godot/
+game/native/data/
+
+# --- renewal HYBRID 코어 (2026-06-21) ---
+# orch 런타임 체크포인트 DB(AsyncSqliteSaver 라이브 상태·-wal 대용량): 미추적.
+orch/*.db
+orch/*.db-shm
+orch/*.db-wal
+# orch emitter seq 영속(런타임 상태)은 state/ 하위라 이미 무시됨.
+config/app.env
+vault/
+
+# --- Owner 제공 provider 견본 (라이브 키 인라인·커밋 금지·2026-06-24) ---
+# 키는 config/app.env(gitignored)로 일원화. 견본은 로컬 참고용으로만 유지.
+tests/test_azure.py
+tests/test_qwen-image.py
+
+# --- 공개 저장소 위생 ---
+# 비밀값 파일은 커밋하지 않음. 키 이름 견본만 추적.
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+# 에이전트 세션 산출물(guards 스크립트와 동결 해시만 추적)
+.omc/*
+!.omc/guards/
+.omc/guards/*
+!.omc/guards/*.sh
+!.omc/state/
+.omc/state/*
+!.omc/state/FREEZE.md
+!.omc/state/protected_pre.sha
+.claude/
+.vscode/
+dist/

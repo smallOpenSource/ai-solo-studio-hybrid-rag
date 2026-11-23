@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>회상의 방 — Memoir Room</title>
+<style>
+  html, body { margin: 0; background: #16121f; color: #e7e0ef; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존)·캔버스는 touch-action:none 으로 드래그/탭 소유(페이지 스크롤·줌 차단) */
+  #game { display: block; margin: 14px auto; max-width: 96vw; height: auto; background: #0d0a16; border: 2px solid #9b7bd4; image-rendering: pixelated; touch-action: none; }
+  p { text-align: center; color: #9a8fb0; margin: 8px 16px; font-size: 13px; }
+  #vignette { color: #c8b8e6; font-style: italic; min-height: 18px; transition: opacity 0.2s; }
+  #vignette:empty { opacity: 0; }
+  #epilogue { color: #e7c98b; min-height: 18px; }
+  #epilogue:empty { display: none; }
+  #hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; pointer-events: none; z-index: 10; }
+  #hud button { pointer-events: auto; font-family: monospace; font-size: 16px; background: #1c1630; color: #e7e0ef; border: 1px solid #9b7bd4; border-radius: 6px; padding: 6px 12px; touch-action: manipulation; cursor: pointer; }
+  #hint.on { background: #9b7bd4; color: #160f24; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <button id="hint" type="button" aria-label="힌트 토글">힌트 ✦</button>
+  <button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+</div>
+<canvas id="game" width="480" height="560"></canvas>
+<p>물건을 끌어다(드래그) 알맞은 자리에 놓거나, 물건을 탭해 고른 뒤 자리를 탭하세요. 방을 다 정리하면 그 시절의 기억이 떠오릅니다.</p>
+<!-- 비네트(AC8): 아이템 배치 성공 시 그 물건의 한 줄 회상이 여기 렌더(상태게이트+렌더노출). -->
+<p id="vignette" aria-live="polite"></p>
+<!-- 에필로그(AC7): 4챕터(현재) 완료 시 누적 선택의 순수 합성 결과가 여기 렌더. -->
+<p id="epilogue" aria-live="polite"></p>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단) ──────────────────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.18, noteDur: 0.42,
+    bgm: [392, 0, 440, 0, 349, 0, 392, 0, 294, 0, 330, 0],     // G _ A _ F _ G _ D _ E _ (잔잔·노스탤지어)
+    sfx: function (au) {
+      return {
+        place: function () { au.tone(523, 0.08, "triangle", 0.4); },          // 물건 안착
+        beat:  function () { au.chord([392, 523, 659], 0.4, "triangle", 0.4, 130); }, // 서사 비트
+        choose: function () { au.tone(659, 0.12, "sine", 0.4); },             // 선택
+        reject: function () { au.tone(196, 0.07, "square", 0.3); },           // 잘못된 자리
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; }, ambient: function () {} };
+
+  // ── 챕터별 앰비언트 모티프(M-AC9·노스탤지어 드론·_audio.js 가산 ambient·비게이트 feel·미unlock 시 no-op) ──
+  //   챕터별 화음 팔레트(베이스). 정적 동시 코드가 아니라, 아래 __ambientPlan 이 챕터별 셰이프로 성부를
+  //   시간 엇갈림(at) 시퀀스화 → "모티프"(성부열). 챕터 distinct·순수(chapter 만의 함수).
+  var AMBIENT_CHORD = [
+    [130.81, 196.00, 261.63],  // C3 G3 C4 — 유년(따뜻)
+    [146.83, 220.00, 293.66],  // D3 A3 D4 — 학창(맑음)
+    [110.00, 164.81, 220.00],  // A2 E3 A3 — 사회초년(차분)
+    [98.00, 146.83, 196.00]    // G2 D3 G3 — 현재(깊음)
+  ];
+  // 챕터별 모티프 셰이프(코드 degree 인덱스 순서). 챕터마다 상이 → 같은 베이스라도 모티프 윤곽이 갈린다.
+  var AMBIENT_SHAPE = [
+    [0, 2, 1, 2],  // 유년: 펼침(open)
+    [0, 1, 2, 1],  // 학창: 상승-회귀(rise)
+    [2, 1, 0, 1],  // 사회초년: 하행(descend)
+    [0, 2, 1, 0]   // 현재: 수렴(return)
+  ];
+  var AMBIENT_STEP = 0.55;     // 성부 간 시간 엇갈림(초) — 정적 동시 코드가 아닌 모티프 시퀀스
+  // 순수 함수(M-AC9): chapter → 앰비언트 모티프 성부열([{freq, at}...]). 외부 state read 금지(인자만의 함수·
+  //   동일 chapter→동일 plan). 챕터 distinct(베이스 화음 상이 + 셰이프 상이). bounded(챕터 수=4·초과 금지).
+  function __ambientPlan(chapter) {
+    var len = AMBIENT_CHORD.length;
+    var idx = ((chapter - 1) % len + len) % len;
+    var base = AMBIENT_CHORD[idx], shape = AMBIENT_SHAPE[idx], voices = [];
+    for (var i = 0; i < shape.length; i++) {
+      voices.push({ freq: base[shape[i] % base.length], at: i * AMBIENT_STEP });
+    }
+    return voices;
+  }
+  // playAmbient = __ambientPlan 단일소스 소비(계산만 아님 — A.ambient 가 성부 카운터로 소비 입증·M-AC9).
+  function playAmbient() { try { A.ambient(__ambientPlan(state.chapter)); } catch (e) {} }
+
+  // ── 시드 고정 PRNG (mulberry32·인라인·비결정 RNG 미사용 → 결정론·재현) ─────────
+  function makePRNG(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var SEED = 0x6D3A2F;
+
+  // ── 방 슬롯 좌표(캔버스 좌표·2행×3열 공유 그리드) ──────────────────────────────
+  var POS = [
+    { x: 18, y: 70, w: 120, h: 92 }, { x: 180, y: 70, w: 120, h: 92 }, { x: 342, y: 70, w: 120, h: 92 },
+    { x: 18, y: 250, w: 120, h: 92 }, { x: 180, y: 250, w: 120, h: 92 }, { x: 342, y: 250, w: 120, h: 92 }
+  ];
+
+  // ── 챕터 데이터(계약 = vault/specs/memoir-room.md). 각 item.slot = 정답 슬롯 id. ──
+  //   R2 인생호(4챕터): 유년→학창→사회초년→현재(=에필로그 장). 각 item.vignette = 배치 시 한 줄 회상(AC8).
+  var CHAPTERS = [
+    {
+      title: "유년의 방", tint: "#241a33",
+      slots: [
+        { id: "shelf", label: "책장", pos: POS[0] }, { id: "frame", label: "액자걸이", pos: POS[1] },
+        { id: "window", label: "창가", pos: POS[2] }, { id: "bed", label: "침대", pos: POS[3] },
+        { id: "desk", label: "책상", pos: POS[4] }, { id: "toybox", label: "장난감함", pos: POS[5] }
+      ],
+      items: [
+        { id: "book", label: "그림책", color: "#5e9cc9", slot: "shelf", vignette: "그림책 페이지를 넘기던 작은 손가락이 떠오른다." },
+        { id: "photo", label: "가족사진", color: "#c9a85e", slot: "frame", vignette: "빛바랜 가족사진 속 모두가 웃고 있었다." },
+        { id: "plant", label: "화분", color: "#6fb56f", slot: "window", vignette: "창가 화분에 물을 주던 아침의 햇살." },
+        { id: "teddy", label: "곰인형", color: "#c98b5e", slot: "bed", vignette: "곰인형을 끌어안고 잠들던 밤의 안도감." },
+        { id: "crayon", label: "색연필", color: "#c95e8b", slot: "desk", vignette: "색연필로 그린 삐뚤빼뚤한 우리 집 그림." },
+        { id: "ball", label: "공", color: "#d6cf5e", slot: "toybox", vignette: "마당을 구르던 공과 끝나지 않던 오후." }
+      ],
+      beat: "유년의 방을 정리하니, 비 오던 오후 자전거를 처음 배우던 기억이 천천히 떠오른다.",
+      choices: [
+        { id: "a", label: "곰인형을 간직한다", branch: "곰인형은 평생 책상 위에 남았다." },
+        { id: "b", label: "동생에게 물려준다", branch: "곰인형은 동생의 첫 친구가 되었다." }
+      ]
+    },
+    {
+      title: "학창의 방", tint: "#1f2233",
+      slots: [
+        { id: "deskS", label: "책상", pos: POS[0] }, { id: "shelfS", label: "책장", pos: POS[1] },
+        { id: "wallS", label: "벽", pos: POS[2] }, { id: "bedS", label: "침대", pos: POS[3] },
+        { id: "floorS", label: "바닥", pos: POS[4] }, { id: "windowS", label: "창가", pos: POS[5] }
+      ],
+      items: [
+        { id: "textbook", label: "교과서", color: "#5e9cc9", slot: "deskS", vignette: "밑줄로 가득한 교과서, 새벽까지 깜빡이던 스탠드." },
+        { id: "trophy", label: "상장", color: "#c9a85e", slot: "shelfS", vignette: "처음 받아 본 상장, 떨리던 호명." },
+        { id: "poster", label: "포스터", color: "#8b8bc9", slot: "wallS", vignette: "벽에 붙여 둔 좋아하던 가수의 포스터." },
+        { id: "uniform", label: "교복", color: "#6fb56f", slot: "bedS", vignette: "다림질된 교복에서 나던 풀 먹인 냄새." },
+        { id: "backpack", label: "책가방", color: "#c98b5e", slot: "floorS", vignette: "어깨가 배기던 가방과 등굣길의 찬 공기." },
+        { id: "letter", label: "쪽지", color: "#c95e8b", slot: "windowS", vignette: "창틈으로 건네받던 접힌 쪽지 한 장." }
+      ],
+      beat: "교복을 개키니, 시험과 첫 우정과 풋풋한 설렘이 한꺼번에 밀려온다.",
+      choices: [
+        { id: "a", label: "혼자 더 깊이 파고든다", branch: "그는 도서관의 가장 안쪽 자리를 자기 것으로 삼았다." },
+        { id: "b", label: "친구들과 더 어울린다", branch: "그는 방과 후 교정을 친구들의 웃음으로 채웠다." }
+      ]
+    },
+    {
+      title: "사회초년의 방", tint: "#1a2433",
+      slots: [
+        { id: "wall", label: "벽", pos: POS[0] }, { id: "rack", label: "선반", pos: POS[1] },
+        { id: "window2", label: "창가", pos: POS[2] }, { id: "desk2", label: "책상", pos: POS[3] },
+        { id: "stand", label: "협탁", pos: POS[4] }, { id: "floor", label: "바닥", pos: POS[5] }
+      ],
+      items: [
+        { id: "diploma", label: "졸업장", color: "#c9a85e", slot: "wall", vignette: "졸업장을 걸던 손, 사회로 나서던 첫 아침." },
+        { id: "mug", label: "머그컵", color: "#5ec9b0", slot: "rack", vignette: "야근의 밤을 데워 주던 머그컵의 김." },
+        { id: "guitar", label: "기타", color: "#c98b5e", slot: "window2", vignette: "퇴근 후 창가에서 튕기던 서툰 코드." },
+        { id: "laptop", label: "노트북", color: "#8b8bc9", slot: "desk2", vignette: "밤새 켜져 있던 노트북의 푸른 빛." },
+        { id: "frame2", label: "사진액자", color: "#c95e8b", slot: "stand", vignette: "협탁에 둔 사진, 멀어진 사람들이 거기 있었다." },
+        { id: "movebox", label: "이사상자", color: "#b59a6f", slot: "floor", vignette: "다 풀지 못한 이사상자, 미뤄 둔 정착." }
+      ],
+      beat: "마지막 짐을 싸니, 처음 받은 월급과 낯선 도시의 밤이 함께 밀려온다.",
+      choices: [
+        { id: "a", label: "고향에 자주 내려온다", branch: "그는 계절마다 옛 방을 다시 찾았다." },
+        { id: "b", label: "새 도시에 정착한다", branch: "그는 새 도시에서 자기만의 방을 꾸렸다." }
+      ]
+    },
+    {
+      title: "지금의 방", tint: "#231a2e",
+      slots: [
+        { id: "stand4", label: "스탠드", pos: POS[0] }, { id: "shelf4", label: "책장", pos: POS[1] },
+        { id: "window4", label: "창가", pos: POS[2] }, { id: "armchair", label: "안락의자", pos: POS[3] },
+        { id: "table4", label: "탁자", pos: POS[4] }, { id: "memorybox", label: "추억상자", pos: POS[5] }
+      ],
+      items: [
+        { id: "candle", label: "촛불", color: "#d6cf5e", slot: "stand4", vignette: "스탠드 옆 촛불, 저무는 저녁의 온기." },
+        { id: "clock", label: "벽시계", color: "#8b8bc9", slot: "shelf4", vignette: "느리게 가는 벽시계의 익숙한 소리." },
+        { id: "plant4", label: "화분", color: "#6fb56f", slot: "window4", vignette: "창가의 화분, 다시 봄을 기다린다." },
+        { id: "blanket", label: "담요", color: "#c98b5e", slot: "armchair", vignette: "무릎을 덮던 담요의 포근한 무게." },
+        { id: "glasses", label: "돋보기", color: "#5ec9b0", slot: "table4", vignette: "탁자에 놓인 돋보기, 작아진 글씨들." },
+        { id: "album", label: "앨범", color: "#c95e8b", slot: "memorybox", vignette: "오래된 앨범, 손때 묻은 모서리." }
+      ],
+      beat: "지금의 방을 정리하니, 지나온 모든 방이 하나의 풍경으로 겹쳐진다.",
+      choices: [
+        { id: "a", label: "고요히 바라본다", branch: "그는 창가에 앉아 지나온 방들을 오래 바라보았다." },
+        { id: "b", label: "다음 방으로 걸어간다", branch: "그는 문을 열고 아직 오지 않은 방을 향해 걸었다." }
+      ]
+    }
+  ];
+
+  // ── 에필로그 합성(AC7 carry-forward) — 누적 선택 choices[] 의 순수 함수. ──────────
+  //   챕터별 프래그먼트(선택 a/b 별 상이)를 위치 합성 → 어느 챕터 선택이 바뀌어도 결과가 갈린다
+  //   (ch1·ch2·ch3·ch4 전부 변인). 위치 고정이라 교차 충돌 없음·동일 choices→동일 출력(순수).
+  var EPILOGUE_FRAG = [
+    { a: "간직한 곰인형처럼 그는 옛 온기를 평생 품었고,", b: "동생에게 물려준 그날처럼 그는 일찍 나눔을 배웠고," },
+    { a: "홀로 도서관을 지키던 밤이 그를 단단하게 만들었으며,", b: "친구들과 어울리던 교정이 그를 넓게 키웠으며," },
+    { a: "고향을 자주 찾던 마음이 뿌리를 잊지 않게 했고,", b: "새 도시에 정착한 결심이 그를 멀리 데려갔고," },
+    { a: "이제 그는 창가에 앉아 지나온 방들을 고요히 바라본다.", b: "이제 그는 문을 열고 다음 방을 향해 천천히 걸어간다." }
+  ];
+  // ── 에필로그 패턴 코다(M-AC10·선택 *패턴* 의 순수 함수·≤3 티어·bounded) ──────────────────
+  //   위치별 프래그먼트(개별 선택)와 별개로, 누적 선택의 *모양*(일관/균형/전환)을 한 줄 코다로 부가한다.
+  //   순수: choices 벡터만의 함수. 패턴 기반(위치 무관) — 분포가 같으면 위치가 달라도 동일 코다(aaaa≡bbbb·
+  //   abab≡aabb). ≤3 티어(천장): 0=일관(전부 동일)·1=균형(동수 2:2)·2=전환(치우침 3:1).
+  var EPILOGUE_CODA = [
+    "지나온 선택들은 한결같아, 그 일관됨이 한 사람의 결을 이루었다.",   // 0 일관
+    "머뭇거림과 결단이 고르게 갈마들어, 그 균형이 삶에 너비를 주었다.", // 1 균형
+    "어느 길목에서 마음이 크게 돌아서, 그 전환이 삶의 방향을 바꾸었다."  // 2 전환
+  ];
+  // 순수: 유효 선택(미선택 무시)의 분포로 티어 결정. 개별 선택값이 아닌 *패턴* 함수(위치 무관).
+  function epilogueCoda(choices) {
+    var counts = {}, n = 0;
+    for (var i = 0; i < EPILOGUE_FRAG.length; i++) {
+      var c = choices && choices[i];
+      if (c == null) continue;
+      counts[c] = (counts[c] || 0) + 1; n++;
+    }
+    if (n === 0) return EPILOGUE_CODA[0];
+    var max = 0;
+    for (var k in counts) { if (counts[k] > max) max = counts[k]; }
+    var minority = n - max;                                  // 0=전부 동일 · 동수면 max
+    var tier = (minority === 0) ? 0 : (max === minority ? 1 : 2);   // 일관 / 균형(2:2) / 전환(3:1 등)
+    return EPILOGUE_CODA[tier];
+  }
+  // 순수: 외부 state read 금지 — 인자 choices 벡터만의 함수. 미선택/미지 선택은 빈 프래그먼트로 안전.
+  //   M-AC10 가산: 기존 4-위치 프래그먼트 합성 보존 + 선택 패턴 코다(순수·≤3·기존 ch1/ch2 distinct 보존).
+  function resolveEpilogue(choices) {
+    var parts = [];
+    for (var i = 0; i < EPILOGUE_FRAG.length; i++) {
+      var c = choices && choices[i];
+      var frag = EPILOGUE_FRAG[i][c];
+      parts.push(frag || "…");
+    }
+    return "한 사람의 일대기 — " + parts.join(" ") + " " + epilogueCoda(choices);
+  }
+
+  // ── 결정론 상태 + 테스트 훅 ────────────────────────────────────────────────────
+  // 계약 = vault/specs/memoir-room.md(handoff 브리프) 와 1:1. placed = { slotId: itemId }.
+  var state = {
+    chapter: 1, totalChapters: CHAPTERS.length, placed: {},
+    narrativeBeatShown: false, branch: null, hintOn: false, phase: "placing",
+    // ── R2 가산(기존 필드 보존): 누적 선택·마지막 비네트·에필로그 ──
+    choices: [],            // choices[chapter-1]=choiceId (idempotent 인덱스 덮어쓰기·append 금지)
+    lastVignette: null,     // 마지막 배치 성공 아이템의 한 줄 회상(AC8·placeItem 창발)
+    epilogue: null          // 4챕터 완료 시 resolveEpilogue(choices) 순수 합성(AC7)
+  };
+  window.__state = state;        // 테스트훅(헤드리스 상태 단언)
+
+  var trayOrder = [];            // 현재 챕터 트레이 표시 순서(시드 고정 셔플)
+
+  function curChapter() { return CHAPTERS[state.chapter - 1]; }
+  function curItems() { return curChapter().items; }
+  function curSlots() { return curChapter().slots; }
+  function itemById(id) { return curItems().filter(function (i) { return i.id === id; })[0] || null; }
+  function slotById(id) { return curSlots().filter(function (s) { return s.id === id; })[0] || null; }
+  function isPlaced(itemId) {
+    for (var k in state.placed) { if (state.placed[k] === itemId) return true; }
+    return false;
+  }
+
+  // 트레이 순서 = 시드 고정 Fisher-Yates(아이템이 정답순으로 늘어서지 않게·결정론).
+  function layoutTray() {
+    var rng = makePRNG(SEED + state.chapter * 1009);
+    var ids = curItems().map(function (i) { return i.id; });
+    for (var i = ids.length - 1; i > 0; i--) {
+      var j = Math.floor(rng() * (i + 1));
+      var t = ids[i]; ids[i] = ids[j]; ids[j] = t;
+    }
+    trayOrder = ids;
+  }
+
+  // 트레이의 미배치 아이템 사각형(고정 슬롯·reflow 없음 → 좌표 안정·QA 드래그 결정론).
+  function trayItemRects() {
+    var out = [];
+    for (var i = 0; i < trayOrder.length; i++) {
+      var id = trayOrder[i];
+      if (isPlaced(id)) continue;
+      out.push({ id: id, x: 18 + i * 76, y: 462, w: 64, h: 58 });
+    }
+    return out;
+  }
+
+  // ── 핵심 액션 ──────────────────────────────────────────────────────────────────
+  function chapterComplete() {
+    // placeItem 은 정답 슬롯만 채우므로 placed 수 == 아이템 수 ⇔ 전 슬롯 정답 충족.
+    return Object.keys(state.placed).length === curItems().length;
+  }
+
+  // 배치: slotId 가 item.home 일 때만 placed[slotId]=itemId. 틀린 슬롯/점유/중복은 거부(negative).
+  // 결합 불변식: 전 슬롯 충족 시에만 narrativeBeatShown=true(여기 안에서만 세팅 → 창발).
+  function placeItem(itemId, slotId) {
+    if (state.phase !== "placing") return false;
+    var it = itemById(itemId);
+    if (!it || !slotById(slotId)) return false;       // 미지의 아이템/슬롯
+    if (state.placed[slotId]) return false;           // 점유된 슬롯
+    if (isPlaced(itemId)) return false;               // 이미 배치된 아이템
+    if (it.slot !== slotId) { A.play("reject"); return false; }  // 틀린 슬롯 → 거부(negative)
+    state.placed[slotId] = itemId;
+    state.lastVignette = it.vignette;                 // AC8: 배치 성공 → 그 물건의 한 줄 회상(아이템별 상이·창발)
+    A.play("place");
+    if (chapterComplete()) {
+      state.narrativeBeatShown = true;                // coupling: 전 슬롯 충족 → 비트
+      state.phase = (state.chapter === state.totalChapters) ? "complete" : "beat";
+      A.play("beat");
+    }
+    render();
+    return true;
+  }
+
+  // 다음 챕터: 현재 챕터 정리완료(narrativeBeatShown) 일 때만 chapter+1, 방 상태 리셋.
+  function advanceChapter() {
+    if (state.chapter >= state.totalChapters) return false;
+    if (!state.narrativeBeatShown) return false;      // 미완성 챕터 진입 거부(negative)
+    state.chapter += 1;
+    state.placed = {};
+    state.narrativeBeatShown = false;
+    state.lastVignette = null;                          // 다음 방: 회상 초기화(누적 choices 는 보존)
+    state.branch = null;                               // resetGame 과 대칭: 다음 챕터 선택지 게이트(branch==null) 복구
+    // ★carry 불변식: state.choices 는 여기서 건드리지 않는다(챕터 간 누적 보존). resetGame 만 비운다.
+    state.phase = "placing";
+    held = null; selected = null;
+    layoutTray();
+    render();
+    playAmbient();                                     // 새 방 진입 → 챕터 톤의 앰비언트 패드(비게이트·no-op 가드)
+    return true;
+  }
+
+  // 분기: 선택 id → branch 텍스트(결정론 resolver·선택별 상이).
+  function resolveBranch(choiceId) {
+    var cs = curChapter().choices;
+    for (var i = 0; i < cs.length; i++) { if (cs[i].id === choiceId) return cs[i].branch; }
+    return null;
+  }
+  function choose(choiceId) {
+    var b = resolveBranch(choiceId);
+    if (b == null) return null;
+    state.branch = b;                                  // 기존 AC4 게이트 보존(분기 텍스트·반환값)
+    state.choices[state.chapter - 1] = choiceId;       // AC7 carry: 챕터 인덱스 idempotent 덮어쓰기(append 금지)
+    // 마지막 챕터(현재) 정리완료 후 선택 시 → 누적 선택의 순수 합성 에필로그 확정.
+    if (state.chapter === state.totalChapters && state.phase === "complete") {
+      state.epilogue = resolveEpilogue(state.choices);
+    }
+    A.play("choose");
+    render();
+    return b;
+  }
+
+  function toggleHint() { state.hintOn = !state.hintOn; syncHintBtn(); render(); return state.hintOn; }
+
+  function resetGame() {
+    state.chapter = 1; state.placed = {}; state.narrativeBeatShown = false;
+    state.branch = null; state.hintOn = false; state.phase = "placing";
+    state.choices = []; state.lastVignette = null; state.epilogue = null;   // R2: 런 간 잔존 0(carry 깨끗이 시작)
+    held = null; selected = null;
+    layoutTray(); syncHintBtn(); render();
+  }
+
+  // 헤드리스 테스트 API — Canvas 실입력과 **동일 로직**(QA가 page.evaluate 로 구동).
+  window.__placeItem = placeItem;
+  window.__chapterComplete = chapterComplete;
+  window.__advanceChapter = advanceChapter;
+  window.__choose = choose;
+  window.__toggleHint = toggleHint;
+  window.__resolveEpilogue = resolveEpilogue;   // AC7: 순수 합성(동일 choices→동일 출력) 단언용
+  window.__epilogueCoda = epilogueCoda;         // M-AC10: 에필로그 패턴 코다(순수·패턴 distinct·≤3 티어)
+  window.__ambientPlan = __ambientPlan;         // M-AC9: 챕터별 앰비언트 모티프(순수·챕터 distinct·성부열)
+  window.__resetGame = resetGame;               // AC7: carry-forward 양팔 격리(런 간 깨끗이 시작)
+  // QA 구동 훅(좌표·정답매핑) — 단언은 항상 placeItem/실입력 경유(우회 아님).
+  window.__solution = function () { var m = {}; curItems().forEach(function (it) { m[it.id] = it.slot; }); return m; };
+  window.__vignettes = function () { var m = {}; curItems().forEach(function (it) { m[it.id] = it.vignette; }); return m; };  // AC8: 아이템별 비네트
+  window.__geom = function () {
+    var items = {}; trayItemRects().forEach(function (r) { items[r.id] = { x: r.x, y: r.y, w: r.w, h: r.h }; });
+    var slots = {}; curSlots().forEach(function (s) { slots[s.id] = { x: s.pos.x, y: s.pos.y, w: s.pos.w, h: s.pos.h }; });
+    return { canvas: { w: canvas.width, h: canvas.height }, items: items, slots: slots };
+  };
+
+  // ── 입력: Pointer Events 단일 경로(마우스+터치) + CSS 스케일 보정 ──────────────
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var held = null, selected = null, ghost = { x: 0, y: 0 }, downPt = { x: 0, y: 0 }, moved = false;
+  var uiButtons = [];           // render 가 채우는 화면 버튼(선택지/다음/다시)
+
+  // 캔버스가 max-width 로 축소되면 rect.width≠canvas.width → 비율(canvas/rect)을 곱해야 적중점이 맞다.
+  function toCanvas(e) {
+    var r = canvas.getBoundingClientRect();
+    var sx = canvas.width / r.width, sy = canvas.height / r.height;
+    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+  }
+  function inRect(x, y, r) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  function itemAt(x, y) { var rs = trayItemRects(); for (var i = 0; i < rs.length; i++) { if (inRect(x, y, rs[i])) return rs[i].id; } return null; }
+  function slotAt(x, y) { var ss = curSlots(); for (var i = 0; i < ss.length; i++) { if (inRect(x, y, ss[i].pos)) return ss[i].id; } return null; }
+  function buttonAt(x, y) { for (var i = 0; i < uiButtons.length; i++) { if (inRect(x, y, uiButtons[i])) return uiButtons[i]; } return null; }
+
+  function handleButton(b) {
+    if (b.kind === "choice") choose(b.id);
+    else if (b.kind === "next") advanceChapter();
+    else if (b.kind === "restart") resetGame();
+  }
+
+  canvas.addEventListener("pointerdown", function (e) {
+    A.unlock();                                       // 첫 제스처서 오디오 unlock(autoplay 정책)
+    playAmbient();                                     // 첫 제스처서 앰비언트 패드 swell(이후 챕터 전환마다)
+    var p = toCanvas(e);
+    var b = buttonAt(p.x, p.y);
+    if (b) { handleButton(b); return; }
+    if (state.phase !== "placing") return;
+    var id = itemAt(p.x, p.y);
+    if (id) { held = id; ghost = { x: p.x, y: p.y }; downPt = { x: p.x, y: p.y }; moved = false; render(); return; }
+    var s = slotAt(p.x, p.y);
+    if (s && selected) { placeItem(selected, s); selected = null; render(); }   // 탭 모드: 자리 탭 → 배치
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!held) return;
+    var p = toCanvas(e); ghost = { x: p.x, y: p.y };
+    if (Math.abs(p.x - downPt.x) + Math.abs(p.y - downPt.y) > 6) moved = true;
+    render();
+  });
+  canvas.addEventListener("pointerup", function (e) {
+    if (!held) return;
+    var p = toCanvas(e);
+    if (moved) {                                      // 드래그: 슬롯 위에서 놓으면 배치
+      var s = slotAt(p.x, p.y);
+      if (s) placeItem(held, s);
+      held = null; selected = null;
+    } else {                                          // 제자리 탭: 아이템 선택(탭 모드)
+      selected = held; held = null;
+    }
+    render();
+  });
+  canvas.addEventListener("pointercancel", function () { held = null; render(); });
+
+  // PC 보조키: h=힌트.
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "h" || e.key === "H") { e.preventDefault(); toggleHint(); }
+  });
+
+  // ── HTML 버튼: 힌트·음소거 ──────────────────────────────────────────────────────
+  var hintBtn = document.getElementById("hint");
+  function syncHintBtn() { if (hintBtn) hintBtn.classList.toggle("on", state.hintOn); }
+
+  // 비네트/에필로그 노출 노드(AC8/AC7 렌더 소비) — render() 가 state 에서 단일 동기화(vestigial echo 차단).
+  var vignetteEl = document.getElementById("vignette");
+  var epilogueEl = document.getElementById("epilogue");
+  function syncNarrationDom() {
+    if (vignetteEl) vignetteEl.textContent = state.lastVignette || "";
+    if (epilogueEl) epilogueEl.textContent = state.epilogue || "";
+  }
+  if (hintBtn) hintBtn.addEventListener("click", function () { A.unlock(); toggleHint(); });
+
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+
+  // ── 렌더 ────────────────────────────────────────────────────────────────────────
+  function wrapText(text, maxCh) {
+    // monospace 근사 줄바꿈(공백 기준·한 줄 maxCh 자 상한).
+    var words = text.split(" "), lines = [], line = "";
+    for (var i = 0; i < words.length; i++) {
+      var t = line ? line + " " + words[i] : words[i];
+      if (t.length > maxCh && line) { lines.push(line); line = words[i]; }
+      else line = t;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function drawItemIcon(x, y, w, h, item, alpha) {
+    ctx.globalAlpha = alpha == null ? 1 : alpha;
+    ctx.fillStyle = item.color; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "rgba(255,255,255,0.22)"; ctx.fillRect(x, y, w, 8);   // 베벨 하이라이트
+    ctx.strokeStyle = "#0d0a16"; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = "#160f24"; ctx.font = "bold 13px monospace"; ctx.textAlign = "center";
+    ctx.fillText(item.label, x + w / 2, y + h / 2 + 5);
+    ctx.textAlign = "left"; ctx.globalAlpha = 1;
+  }
+
+  function drawButton(rect, text, fill) {
+    ctx.fillStyle = fill; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = "#e7e0ef"; ctx.lineWidth = 1; ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.fillStyle = "#160f24"; ctx.font = "bold 15px monospace"; ctx.textAlign = "center";
+    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
+    ctx.textAlign = "left";
+  }
+
+  function render() {
+    uiButtons = [];
+    syncNarrationDom();                 // AC8/AC7: lastVignette·epilogue 를 노출 DOM 노드에 렌더 소비
+    var ch = curChapter();
+
+    // 배경(방 분위기: 벽/바닥 분할 + 챕터 틴트)
+    ctx.fillStyle = "#0d0a16"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = ch.tint; ctx.fillRect(0, 40, canvas.width, 360);            // 방 영역
+    ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(0, 360, canvas.width, 40); // 바닥 그림자
+    // 결정론 먼지 입자(시드 고정·장식)
+    var rng = makePRNG(SEED + state.chapter * 31);
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    for (var d = 0; d < 24; d++) { ctx.fillRect(20 + rng() * 440, 48 + rng() * 340, 2, 2); }
+
+    // 타이틀 (좌우 HUD 버튼 영역[힌트·음소거]을 피해 안쪽으로 배치)
+    ctx.fillStyle = "#c8b8e6"; ctx.font = "15px monospace"; ctx.textAlign = "left";
+    ctx.fillText("Ch." + state.chapter + "/" + state.totalChapters + " · " + ch.title, 96, 26);
+    var placedN = Object.keys(state.placed).length;
+    ctx.fillStyle = "#9a8fb0"; ctx.textAlign = "right";
+    ctx.fillText(placedN + "/" + ch.items.length + " 정리", canvas.width - 70, 26);
+    ctx.textAlign = "left";
+
+    // 슬롯
+    for (var i = 0; i < ch.slots.length; i++) {
+      var s = ch.slots[i], r = s.pos, occupant = state.placed[s.id];
+      ctx.strokeStyle = "#5a4d77"; ctx.lineWidth = 2;
+      ctx.setLineDash([6, 5]); ctx.strokeRect(r.x, r.y, r.w, r.h); ctx.setLineDash([]);
+      ctx.fillStyle = "#7c6f96"; ctx.font = "12px monospace";
+      ctx.fillText(s.label, r.x + 6, r.y + 16);
+      if (occupant) {
+        drawItemIcon(r.x + 16, r.y + 30, r.w - 32, r.h - 42, itemById(occupant), 1);
+      } else if (state.hintOn && state.phase === "placing") {
+        // 힌트 오버레이: 이 슬롯의 정답 아이템을 정답 위치에 흐리게 표시(접근성).
+        var want = null;
+        for (var w2 = 0; w2 < ch.items.length; w2++) { if (ch.items[w2].slot === s.id) { want = ch.items[w2]; break; } }
+        if (want && !isPlaced(want.id)) {
+          ctx.fillStyle = "rgba(155,123,212,0.18)"; ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.strokeStyle = "#9b7bd4"; ctx.lineWidth = 2; ctx.strokeRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+          drawItemIcon(r.x + 16, r.y + 30, r.w - 32, r.h - 42, want, 0.35);
+          ctx.fillStyle = "#c8b8e6"; ctx.font = "10px monospace"; ctx.textAlign = "right";
+          ctx.fillText("여기", r.x + r.w - 6, r.y + 16); ctx.textAlign = "left";
+        }
+      }
+    }
+
+    // 트레이(미배치 물건)
+    ctx.fillStyle = "#9a8fb0"; ctx.font = "12px monospace";
+    ctx.fillText(state.phase === "placing" ? "정리할 물건 (끌어다 놓기 · 또는 탭해서 고르기)" : "방을 다 정리했습니다", 18, 452);
+    var tr = trayItemRects();
+    for (var ti = 0; ti < tr.length; ti++) {
+      var rt = tr[ti];
+      if (rt.id === held) continue;                 // 드래그 중인 건 고스트로
+      drawItemIcon(rt.x, rt.y, rt.w, rt.h, itemById(rt.id), 1);
+      if (rt.id === selected) { ctx.strokeStyle = "#39ff14"; ctx.lineWidth = 3; ctx.strokeRect(rt.x - 2, rt.y - 2, rt.w + 4, rt.h + 4); }
+    }
+
+    // 드래그 고스트
+    if (held) { var hi = itemById(held); drawItemIcon(ghost.x - 32, ghost.y - 29, 64, 58, hi, 0.8); }
+
+    // 서사 패널(정리완료 → 비트 + 선택지/분기/다음)
+    if (state.narrativeBeatShown) {
+      var pnl = { x: 24, y: 168, w: 432, h: 244 };
+      ctx.fillStyle = "rgba(13,10,22,0.92)"; ctx.fillRect(pnl.x, pnl.y, pnl.w, pnl.h);
+      ctx.strokeStyle = "#9b7bd4"; ctx.lineWidth = 2; ctx.strokeRect(pnl.x, pnl.y, pnl.w, pnl.h);
+      ctx.fillStyle = "#e7c98b"; ctx.font = "13px monospace";
+      ctx.fillText("◇ 그 시절의 기억", pnl.x + 16, pnl.y + 26);
+      ctx.fillStyle = "#e7e0ef"; ctx.font = "13px monospace";
+      var bl = wrapText(ch.beat, 30), by = pnl.y + 50;
+      for (var b2 = 0; b2 < bl.length; b2++) { ctx.fillText(bl[b2], pnl.x + 16, by); by += 20; }
+
+      if (state.branch == null) {
+        // 선택지 버튼(분기 미선택)
+        ctx.fillStyle = "#9a8fb0"; ctx.font = "12px monospace";
+        ctx.fillText("이 물건을 어떻게 할까?", pnl.x + 16, by + 6);
+        for (var c = 0; c < ch.choices.length; c++) {
+          var bt = { kind: "choice", id: ch.choices[c].id, x: pnl.x + 16, y: by + 16 + c * 50, w: pnl.w - 32, h: 42 };
+          drawButton(bt, ch.choices[c].label, c === 0 ? "#c8b8e6" : "#b0a3c8");
+          uiButtons.push(bt);
+        }
+      } else {
+        // 분기 결과 + 다음/다시 버튼
+        ctx.fillStyle = "#a8e6c8"; ctx.font = "13px monospace";
+        var brl = wrapText("→ " + state.branch, 30), brY = by + 4;
+        for (var br = 0; br < brl.length; br++) { ctx.fillText(brl[br], pnl.x + 16, brY); brY += 20; }
+        var nb;
+        if (state.phase === "complete") {
+          ctx.fillStyle = "#e7c98b"; ctx.font = "13px monospace";
+          ctx.fillText("◇ 여정의 끝 — 네 방의 기억이 한 사람을 이룬다.", pnl.x + 16, brY + 6);
+          if (state.epilogue) {                       // 누적 선택 합성 에필로그(전문은 #epilogue 노드에 렌더)
+            ctx.fillStyle = "#c8b8e6"; ctx.font = "11px monospace";
+            var epl = wrapText(state.epilogue, 34), epY = brY + 26;
+            for (var e = 0; e < epl.length && e < 4; e++) { ctx.fillText(epl[e], pnl.x + 16, epY); epY += 16; }
+          }
+          nb = { kind: "restart", id: "r", x: pnl.x + 16, y: pnl.y + pnl.h - 50, w: pnl.w - 32, h: 40 };
+          drawButton(nb, "처음부터 다시", "#c8b8e6");
+        } else {
+          nb = { kind: "next", id: "n", x: pnl.x + 16, y: pnl.y + pnl.h - 54, w: pnl.w - 32, h: 42 };
+          drawButton(nb, "다음 방으로 →", "#c8b8e6");
+        }
+        uiButtons.push(nb);
+      }
+    }
+  }
+
+  // ── init ───────────────────────────────────────────────────────────────────────
+  layoutTray();
+  syncHintBtn();
+  render();
+})();
+</script>
+</body>
+</html>

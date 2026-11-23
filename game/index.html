@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>One Man Corp Game</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      /* 더블탭 줌/300ms 지연 차단. FIT+CENTER_BOTH 중앙정렬엔 부모(#app)가 뷰포트 크기여야 함 */
+      html, body { height: 100%; background: #000; touch-action: manipulation; }
+      #app { width: 100vw; height: 100vh; }
+      #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #111; color: #e0e0e0; border: 1px solid #555; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+      // 뮤트 버튼 — 모듈(audio.ts)이 window.__gameAudio 설정. 핸들러 본문은 클릭 시점 참조(모듈 로드 후).
+      (function () {
+        var btn = document.getElementById("mute");
+        if (!btn) return;
+        btn.addEventListener("click", function () {
+          var A = window.__gameAudio;
+          if (!A) return;
+          if (!A.isUnlocked()) A.unlock();
+          else btn.textContent = A.toggleMute() ? "🔇" : "🔊";
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,46 @@
+{
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"서울\"}"
+            },
+            "id": "E0DvqL8a4Ae9TFSE6xpuyInld6GVnapj"
+          }
+        ]
+      }
+    }
+  ],
+  "created": 1780806051,
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "system_fingerprint": "b9544-98d5e8ba8",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 26,
+    "prompt_tokens": 281,
+    "total_tokens": 307,
+    "prompt_tokens_details": {
+      "cached_tokens": 265
+    }
+  },
+  "id": "chatcmpl-dc1BUOpfg5lpGeJSy5AonWfBNX9wOwJY",
+  "timings": {
+    "cache_n": 265,
+    "prompt_n": 16,
+    "prompt_ms": 54.846,
+    "prompt_per_token_ms": 3.427875,
+    "prompt_per_second": 291.72592349487655,
+    "predicted_n": 26,
+    "predicted_ms": 301.98,
+    "predicted_per_token_ms": 11.614615384615385,
+    "predicted_per_second": 86.09841711371612
+  }
+}

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nexus OS - Control Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "secondary-fixed-dim": "#2ae500",
+                      "on-secondary-container": "#107100",
+                      "surface": "#fcf9f8",
+                      "inverse-on-surface": "#f3f0ef",
+                      "primary-fixed-dim": "#c5c0fe",
+                      "on-primary-fixed-variant": "#444076",
+                      "error-container": "#ffdad6",
+                      "tertiary-fixed-dim": "#efc13e",
+                      "surface-bright": "#fcf9f8",
+                      "on-primary-container": "#9792ce",
+                      "surface-tint": "#5c588f",
+                      "on-tertiary-fixed": "#241a00",
+                      "on-primary": "#ffffff",
+                      "on-primary-fixed": "#181348",
+                      "surface-dim": "#dcd9d9",
+                      "on-tertiary-container": "#503d00",
+                      "on-secondary-fixed": "#022100",
+                      "outline-variant": "#c8c5d0",
+                      "on-secondary-fixed-variant": "#095300",
+                      "on-surface": "#1c1b1b",
+                      "background": "#fcf9f8",
+                      "on-tertiary-fixed-variant": "#594400",
+                      "inverse-primary": "#c5c0fe",
+                      "surface-container-low": "#f6f3f2",
+                      "on-secondary": "#ffffff",
+                      "surface-variant": "#e5e2e1",
+                      "primary": "#191448",
+                      "surface-container": "#f0eded",
+                      "on-background": "#1c1b1b",
+                      "tertiary-container": "#d1a622",
+                      "surface-container-high": "#eae7e7",
+                      "on-tertiary": "#ffffff",
+                      "tertiary-fixed": "#ffdf94",
+                      "secondary": "#106e00",
+                      "primary-fixed": "#e3dfff",
+                      "tertiary": "#765b00",
+                      "surface-container-highest": "#e5e2e1",
+                      "error": "#ba1a1a",
+                      "surface-container-lowest": "#ffffff",
+                      "on-error-container": "#93000a",
+                      "on-error": "#ffffff",
+                      "outline": "#787680",
+                      "secondary-container": "#38fe13",
+                      "on-surface-variant": "#47464f",
+                      "secondary-fixed": "#79ff5b",
+                      "inverse-surface": "#313030",
+                      "primary-container": "#2e2a5e"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "unit": "4px",
+                      "container-max": "1440px",
+                      "margin": "24px",
+                      "gutter": "16px"
+              },
+              "fontFamily": {
+                      "label-caps": [
+                              "JetBrains Mono"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "terminal-sm": [
+                              "JetBrains Mono"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Space Mono"
+                      ],
+                      "headline-lg": [
+                              "Space Mono"
+                      ]
+              },
+              "fontSize": {
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "1",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "terminal-sm": [
+                              "13px",
+                              {
+                                      "lineHeight": "1.4",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-1px",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-background');
+            background-image: radial-gradient(theme('colors.outline-variant') 1px, transparent 1px);
+            background-size: 16px 16px;
+        }
+
+        /* Hard-Edged Bevels for Retro-Brutalism */
+        .pixel-panel {
+            background-color: theme('colors.surface');
+            border-top: 2px solid theme('colors.surface-container-lowest');
+            border-left: 2px solid theme('colors.surface-container-lowest');
+            border-right: 2px solid theme('colors.surface-dim');
+            border-bottom: 2px solid theme('colors.surface-dim');
+            box-shadow: inset -1px -1px 0px 0px theme('colors.outline'), inset 1px 1px 0px 0px theme('colors.outline-variant');
+        }
+
+        .pixel-panel-inset {
+            background-color: theme('colors.surface-container');
+            border-bottom: 2px solid theme('colors.surface-container-lowest');
+            border-right: 2px solid theme('colors.surface-container-lowest');
+            border-top: 2px solid theme('colors.surface-dim');
+            border-left: 2px solid theme('colors.surface-dim');
+        }
+
+        .pixel-btn {
+            background-color: theme('colors.surface-container-high');
+            border-top: 2px solid theme('colors.surface-container-lowest');
+            border-left: 2px solid theme('colors.surface-container-lowest');
+            border-right: 2px solid theme('colors.outline');
+            border-bottom: 2px solid theme('colors.outline');
+            transition: all 0.1s;
+        }
+
+        .pixel-btn:active {
+            border-top: 2px solid theme('colors.outline');
+            border-left: 2px solid theme('colors.outline');
+            border-right: 2px solid theme('colors.surface-container-lowest');
+            border-bottom: 2px solid theme('colors.surface-container-lowest');
+            transform: translate(1px, 1px);
+        }
+
+        .terminal-window {
+            background-color: #1A1A1A;
+            color: theme('colors.secondary-fixed');
+            border: 2px solid theme('colors.surface-dim');
+        }
+
+        .sprite-viewport {
+            overflow: hidden;
+            position: relative;
+        }
+
+        .pixel-progress-bar {
+            background-color: #1A1A1A;
+            border: 2px solid theme('colors.outline-variant');
+            padding: 2px;
+            height: 20px;
+        }
+
+        .pixel-progress-fill {
+            height: 100%;
+            background-color: theme('colors.secondary-fixed-dim');
+        }
+        
+        .pixel-progress-fill-alt {
+            height: 100%;
+            background-color: theme('colors.primary-fixed-dim');
+        }
+
+        /* Animation for Terminal */
+        @keyframes typeText {
+            0% { max-width: 0; }
+            100% { max-width: 100%; }
+        }
+        .typing-effect {
+            overflow: hidden;
+            white-space: nowrap;
+            display: inline-block;
+            animation: typeText 2s steps(40, end) infinite alternate;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-body-md overflow-hidden">
+<!-- TopAppBar JSON Component -->
+<header class="bg-primary border-b-2 border-on-primary-fixed-variant flex justify-between items-center w-full px-margin py-unit h-16 z-50 fixed top-0 w-full">
+<div class="flex items-center gap-gutter">
+<span class="material-symbols-outlined text-tertiary-fixed-dim" style="font-variation-settings: 'FILL' 1;">terminal</span>
+<h1 class="text-headline-md font-headline-md text-tertiary-fixed tracking-tight">NEXUS OS v1.0</h1>
+</div>
+<!-- Status Bar area requested in prompt -->
+<div class="hidden md:flex items-center gap-gutter mr-8 bg-[#1A1A1A] p-2 border border-outline-variant">
+<div class="flex items-center gap-2 text-secondary-fixed font-terminal-sm text-terminal-sm">
+<span class="material-symbols-outlined text-secondary-fixed text-sm">favorite</span>
+<span>SYS: OK</span>
+</div>
+<div class="w-px h-4 bg-outline-variant"></div>
+<div class="flex items-center gap-2 text-tertiary-fixed-dim font-terminal-sm text-terminal-sm">
+<span class="material-symbols-outlined text-tertiary-fixed-dim text-sm">thermostat</span>
+<span>GPU: 42°C</span>
+</div>
+<div class="w-px h-4 bg-outline-variant"></div>
+<div class="flex items-center gap-2 text-primary-fixed-dim font-terminal-sm text-terminal-sm">
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm">schedule</span>
+<span>UP: 99.9%</span>
+</div>
+</div>
+<div class="flex items-center gap-gutter text-on-primary-fixed-variant">
+<button class="hover:bg-primary-container hover:text-tertiary-fixed p-1 rounded-sm transition-colors duration-75 active:translate-y-0.5">
+<span class="material-symbols-outlined">memory</span>
+</button>
+<button class="hover:bg-primary-container hover:text-tertiary-fixed p-1 rounded-sm transition-colors duration-75 active:translate-y-0.5">
+<span class="material-symbols-outlined">speed</span>
+</button>
+<button class="hover:bg-primary-container hover:text-tertiary-fixed p-1 rounded-sm transition-colors duration-75 active:translate-y-0.5">
+<span class="material-symbols-outlined">settings_input_component</span>
+</button>
+</div>
+</header>
+<!-- Main Layout Container -->
+<div class="flex flex-1 pt-16 h-screen">
+<!-- SideNavBar JSON Component -->
+<nav class="bg-surface-container border-r-2 border-outline-variant w-64 flex-shrink-0 flex flex-col z-40 hidden md:flex h-full relative">
+<div class="p-margin border-b border-outline-variant flex items-center gap-gutter">
+<div class="w-12 h-12 bg-surface-variant border-2 border-outline pixel-panel flex items-center justify-center overflow-hidden">
+<!-- Pseudo Avatar -->
+<div class="w-8 h-8 bg-[#1A1A1A] relative">
+<div class="absolute inset-1 bg-tertiary-fixed-dim"></div>
+</div>
+</div>
+<div>
+<h2 class="text-headline-sm font-headline-md text-primary truncate" title="Admin Console">Admin Console</h2>
+<p class="text-label-caps font-label-caps text-on-surface-variant">Nexus-Root-01</p>
+</div>
+</div>
+<div class="flex-1 py-gutter flex flex-col gap-2 overflow-y-auto">
+<a class="flex items-center gap-gutter bg-tertiary-container text-on-tertiary-container border-2 border-tertiary p-2 mx-2 active:scale-95 duration-100 font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                    Dashboard
+                </a>
+<a class="flex items-center gap-gutter text-on-surface-variant p-2 mx-2 hover:bg-surface-variant hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">maps_home_work</span>
+                    Office
+                </a>
+<a class="flex items-center gap-gutter text-on-surface-variant p-2 mx-2 hover:bg-surface-variant hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">group</span>
+                    Agents
+                </a>
+<a class="flex items-center gap-gutter text-on-surface-variant p-2 mx-2 hover:bg-surface-variant hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">database</span>
+                    Knowledge
+                </a>
+<a class="flex items-center gap-gutter text-on-surface-variant p-2 mx-2 hover:bg-surface-variant hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">settings</span>
+                    Settings
+                </a>
+</div>
+<div class="p-margin mt-auto border-t border-outline-variant flex flex-col gap-gutter">
+<button class="pixel-btn w-full py-2 font-label-caps text-label-caps text-primary text-center">
+                    DEPLOY AGENT
+                </button>
+<a class="flex items-center gap-gutter text-on-surface-variant hover:text-error transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-sm">logout</span>
+                    Log Out
+                </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col p-gutter gap-gutter overflow-hidden relative">
+<div class="flex-1 flex flex-col md:flex-row gap-gutter overflow-hidden h-full">
+<!-- Center Panel: Live Office View -->
+<div class="flex-1 pixel-panel flex flex-col overflow-hidden relative shadow-sm">
+<div class="bg-primary text-on-primary px-4 py-2 flex justify-between items-center border-b-2 border-surface-dim">
+<h3 class="font-headline-md text-headline-md text-lg">Live Office View</h3>
+<div class="flex gap-2">
+<span class="material-symbols-outlined text-sm cursor-pointer hover:text-tertiary-fixed">zoom_in</span>
+<span class="material-symbols-outlined text-sm cursor-pointer hover:text-tertiary-fixed">zoom_out</span>
+</div>
+</div>
+<div class="flex-1 relative bg-[#1A1A1A] overflow-hidden pixel-panel-inset m-2 cursor-move" id="map-container">
+<!-- Office Map Image -->
+<div class="absolute top-0 left-0 w-full h-full" data-location="Nexus Core Server Level 1" style="background-image: url('https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg'); background-size: cover; background-position: center;">
+<!-- Sprites overlaid on map -->
+<div class="absolute top-[30%] left-[40%] w-12 h-12" style="background-image: url('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); background-size: 800%; background-position: 0% 0%;"></div>
+<div class="absolute top-[50%] left-[20%] w-12 h-12" style="background-image: url('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); background-size: 800%; background-position: 12.5% 12.5%;"></div>
+<div class="absolute top-[20%] left-[70%] w-12 h-12" style="background-image: url('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); background-size: 800%; background-position: 25% 25%;"></div>
+<!-- UI Overlay markers -->
+<div class="absolute top-[28%] left-[40%] bg-surface text-primary text-[10px] font-label-caps px-1 border border-outline shadow-sm whitespace-nowrap">CEO_Agent</div>
+</div>
+</div>
+</div>
+<!-- Right Side Panels: Active Tasks & Agent Load -->
+<div class="w-full md:w-80 flex flex-col gap-gutter flex-shrink-0">
+<!-- Active Tasks Panel -->
+<div class="pixel-panel flex-1 flex flex-col overflow-hidden">
+<div class="bg-surface-tint text-on-primary px-4 py-2 border-b-2 border-surface-dim">
+<h3 class="font-headline-md text-headline-md text-lg">Active Tasks</h3>
+</div>
+<div class="p-4 flex flex-col gap-4 overflow-y-auto bg-surface-container-low h-full">
+<!-- Task Item 1 -->
+<div class="flex flex-col gap-1">
+<div class="flex justify-between items-center text-sm font-label-caps text-on-surface">
+<span>Q3 Report Gen</span>
+<span class="text-secondary">75%</span>
+</div>
+<div class="pixel-progress-bar w-full">
+<div class="pixel-progress-fill" style="width: 75%;"></div>
+</div>
+<div class="text-[10px] text-on-surface-variant font-terminal-sm text-right">Assigned: Data_Analyst</div>
+</div>
+<!-- Task Item 2 -->
+<div class="flex flex-col gap-1">
+<div class="flex justify-between items-center text-sm font-label-caps text-on-surface">
+<span>Social Media Campaign</span>
+<span class="text-primary">40%</span>
+</div>
+<div class="pixel-progress-bar w-full">
+<div class="pixel-progress-fill-alt" style="width: 40%;"></div>
+</div>
+<div class="text-[10px] text-on-surface-variant font-terminal-sm text-right">Assigned: Marketer</div>
+</div>
+<!-- Task Item 3 -->
+<div class="flex flex-col gap-1 opacity-70">
+<div class="flex justify-between items-center text-sm font-label-caps text-on-surface">
+<span>Server Backup</span>
+<span class="text-on-surface-variant">100%</span>
+</div>
+<div class="pixel-progress-bar w-full">
+<div class="h-full bg-outline-variant" style="width: 100%;"></div>
+</div>
+<div class="text-[10px] text-on-surface-variant font-terminal-sm text-right">Assigned: DevOps</div>
+</div>
+</div>
+</div>
+<!-- Selected Agent Info Panel (JRPG Portrait style) -->
+<div class="pixel-panel h-48 flex flex-row border-2 border-tertiary-container bg-[#fcf5eb]">
+<div class="w-1/3 border-r-2 border-tertiary-container bg-surface-variant p-2 flex flex-col items-center justify-center relative">
+<!-- Ornamental corner accents -->
+<div class="absolute top-1 left-1 w-2 h-2 border-t-2 border-l-2 border-tertiary"></div>
+<div class="absolute top-1 right-1 w-2 h-2 border-t-2 border-r-2 border-tertiary"></div>
+<div class="absolute bottom-1 left-1 w-2 h-2 border-b-2 border-l-2 border-tertiary"></div>
+<div class="absolute bottom-1 right-1 w-2 h-2 border-b-2 border-r-2 border-tertiary"></div>
+<div class="w-16 h-16 bg-[#1A1A1A] border-2 border-tertiary mb-2 relative overflow-hidden">
+<!-- Sprite Portrait snippet -->
+<div class="absolute inset-0" style="background-image: url('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); background-size: 400%; background-position: 0% 0%;"></div>
+</div>
+<div class="bg-primary text-on-primary text-[10px] font-label-caps px-2 py-0.5 border border-primary-fixed">Lvl. 42</div>
+</div>
+<div class="w-2/3 p-3 flex flex-col">
+<h4 class="font-headline-md text-sm text-on-surface mb-1">Agent_CEO</h4>
+<p class="font-terminal-sm text-[11px] text-on-surface-variant mb-2">Class: Executive</p>
+<div class="mt-auto space-y-1">
+<div class="flex justify-between text-[10px] font-label-caps text-on-surface"><span>Morale</span><span>95/100</span></div>
+<div class="w-full h-1.5 bg-outline-variant"><div class="h-full bg-secondary" style="width: 95%;"></div></div>
+<div class="flex justify-between text-[10px] font-label-caps text-on-surface mt-1"><span>Load</span><span>60/100</span></div>
+<div class="w-full h-1.5 bg-outline-variant"><div class="h-full bg-tertiary-fixed-dim" style="width: 60%;"></div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Panel: System Log -->
+<div class="h-40 flex-shrink-0 terminal-window flex flex-col">
+<div class="bg-surface-variant text-on-surface-variant px-3 py-1 flex justify-between items-center border-b border-surface-dim font-label-caps text-xs">
+<span>SYSTEM LOG // terminal.exe</span>
+<div class="flex gap-1">
+<div class="w-3 h-3 bg-outline rounded-none border border-outline-variant"></div>
+<div class="w-3 h-3 bg-outline rounded-none border border-outline-variant flex items-center justify-center"><span class="text-[8px] leading-none">x</span></div>
+</div>
+</div>
+<div class="p-3 font-terminal-sm text-terminal-sm overflow-y-auto flex-1 space-y-1">
+<div class="text-outline-variant">&gt; Nexus OS v1.0 initialized.</div>
+<div class="text-outline-variant">&gt; Loading 16 Agent profiles... <span class="text-secondary-fixed">OK</span></div>
+<div class="text-outline-variant">&gt; Connecting to spatial environment... <span class="text-secondary-fixed">OK</span></div>
+<div>&gt; <span class="text-primary-fixed-dim">Agent_CEO</span>: Initiating quarterly strategy review sequence.</div>
+<div>&gt; <span class="text-tertiary-fixed-dim">Agent_Data</span>: Processing historical market trends (78% complete).</div>
+<div class="flex items-center gap-2">&gt; <span class="typing-effect text-secondary-fixed">Waiting for user input...</span><span class="w-2 h-4 bg-secondary-fixed animate-pulse"></span></div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

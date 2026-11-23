@@ -1,0 +1,26 @@
+# rhythm-tale provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: rhythm-tale
+brief_blob_sha: c971485302992cfefe2588a6a153187c8595ca5d   # `git hash-object vault/specs/rhythm-tale.md`(내용 지문·R3 셋째 슬라이스 갱신)
+brief_sha: PENDING_COMMIT   # 커밋 시점에 오케스트레이터가 brief commit sha 로 확정(게임 commit 선행·provenance 시계열)
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/rhythm-tale.md
+implemented_by: Claude Code (all-in-one Stage2 ralph · Track R · R2 확장)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit 보다 선행한다(provenance 시계열·clicker/puzzle 규범).
+  QA(web/scripts/play_rhythm_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해 단언을 파생한다(하드코딩 금지).
+  단언 값(judge 윈도우 45/90ms·ending 임계 0.70·noteCount 범위)은 브리프 acceptance_criteria 에서만 파생되며,
+  게임 코드 상수(window.__constants)와 교차검증된다(드리프트 적발).
+  ★AC4 직격축: ending 은 tap→judge(deltaMs)→Perfect|Good|Miss→accuracy 창발→resolveEnding(accuracy) 의
+  결과여야 하며 accuracy/ending 직접세팅은 금지(hollow 차단). 하네스가 창발·falsifiable 인과쌍을 단언한다.
+  ★R2 확장(가산·brief_blob_sha 갱신): 3섹션(section 인덱스·rng 비소비·차트시드 0x1357·noteCount=40 골든 불변)·
+  섹션 전이 게이트(perSection 창발)·다중엔딩 finale(resolveFinale(perSection) ≥3·직접세팅 금지·ending A/B 보존)·
+  ③ 다층편곡 실배선(__plannedVoices===__activeLayers 결합 불변식·scheduleMelody 단일소스 iterate·우회=RED·
+  _audio.js 성부 카운터)·섹션 셀렉트. 신규 계약 라인(sections/finale/layers/sectionSelect)=load-bearing(부재 시 FAIL)·
+  신규 임계(sectionThreshold·콤보경계 ≥8/≥16·finale 티어)=brief 파생+게임↔brief drift 단언.
+  ★R3 확장(셋째 슬라이스·가산·brief_blob_sha 갱신): 다중트랙 테마형 편곡(__sectionTheme(i) 섹션 distinct·인덱스 파생·rng 비소비
+  → __plannedVoices melody/bass freq===LANE_FREQ[lane]에 테마 transpose 적용한 독립 기대값 등치[PITCH]·melody 음색===
+  toneToWaveform(__sectionTheme(n.section).tone)[TIMBRE]·테마 미소비 raw/identity=RED·same-lane cross-section freq 상이·
+  __activeTracks voiceset===__activeLayers·성부 카운터 정확값 불변·신규 성부 0)·풀 ③ 연출(섹션 장면 #scene DOM render
+  textContent 렌더 소비·vestigial=RED·memoir AC8 동형·per-note 섹션 톤→음색)·live-flow(LF-1 라이브 전이서 #scene 렌더 소비·
+  LF-2 미래 노트 테마 정합·테마 live hollow 0). 신규 계약 라인(tracks/staging)=load-bearing(부재 시 FAIL)·
+  신규 천장(모티프 수=섹션 수=3)=brief 파생+게임↔brief drift 단언. 기존 AC1~10·GOLDEN·MAJOR-1/2 전부 비회귀.

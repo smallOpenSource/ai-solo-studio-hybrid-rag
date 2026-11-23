@@ -1,0 +1,11 @@
+앞에서 검토한 조립 결과를 game/data/assembly.json 파일로 기록해라. game_data_write 도구를 호출하되 path는 "data/assembly.json", content는 아래 형태의 JSON 객체로 만들어라:
+
+{
+  "ready": true,
+  "runtime": "survivor-sim",
+  "entry": "src/main.ts",
+  "entityCap": 300,
+  "notes": "<조립 검토 요약 — 참조 무결성·무기/웨이브/업그레이드 바인딩·풀링 확인>"
+}
+
+런타임 바인딩 검토가 끝나 플레이가능 빌드 조립이 준비되었음을 ready:true로 표시해라.

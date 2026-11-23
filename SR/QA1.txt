@@ -1,0 +1,20 @@
+
+1. playwright가 필요하다면 다음의 가상디스플레이와 브라우저, 사용하라.
+"""
+[user@host poc]$ echo "DISPLAY=$DISPLAY, PW=$PLAYWRIGHT_BROWSERS_PATH"
+DISPLAY=:99, PW=/opt/playwright-browsers
+
+[user@host poc]$ ls -al /opt/conda/envs/playwright/bin/playwright  --version
+ls (GNU coreutils) 8.30
+Copyright (C) 2018 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Richard M. Stallman and David MacKenzie.
+"""
+
+2. 검색과 리서치 등을 향상시키기 위해 google이 제공하는 서비스의 mcp를 연결하는 것이 더 효과적이라면
+연결해도 좋다. 인증을 나와 함께 하면된다.
+어떤 제품들이 무료 계층에도 mcp를 통한 연결 및 사용량이 넉넉한지 리서치해보고 진행하라.
+제품의 예시는 Stitch, Google AI Studio,NotebookLM,Gemini CLI 등이다.

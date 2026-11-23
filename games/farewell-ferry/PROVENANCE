@@ -1,0 +1,13 @@
+# farewell-ferry provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: farewell-ferry
+brief_sha: b4e889b6f82daaf700debb92e51dfd3681cc9380   # git blob sha (현재 내용)·commit 시 brief_sha=commit 으로 갱신
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/farewell-ferry.md
+implemented_by: Claude Code (all-in-one B1 배치 — #1 farewell-ferry 첫 슬라이스·MINIMAL)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit 보다 선행한다(provenance 시계열).
+  현재 brief_sha 는 `git hash-object vault/specs/farewell-ferry.md` blob sha(미커밋 상태)이며,
+  커밋 시 vault 트리 commit sha 로 갱신한다(clicker-mvp/PROVENANCE 동형).
+  QA(web/scripts/play_farewell-ferry_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해
+  단언을 파생한다(하드코딩 금지). carry/care/farewell/negative 라인 제거 시 계약 파생 불가 → 하네스 FAIL(부정-변이 실증).
+  핵심 차별 루프(memoir 대비): care=반복 양육(1회 배치 아님)·release=상실(승리 아님)·작별 누적→회고 carry.

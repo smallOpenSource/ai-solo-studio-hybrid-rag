@@ -1,0 +1,22 @@
+# Track M provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: memoir-room
+brief_blob_sha: cb2a49b993a5219adce838759d219d9771a4a54d   # `git hash-object vault/specs/memoir-room.md`(내용 지문·셋째 슬라이스 갱신)
+brief_sha: PENDING_COMMIT   # 커밋 시점에 오케스트레이터가 brief commit sha 로 확정(게임 commit 선행·provenance 시계열)
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/memoir-room.md
+implemented_by: Claude Code (/all-in-one Stage2 ralph · Track M = memoir-room · 합의계획 §6)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit보다 선행한다(provenance 시계열).
+  QA(web/scripts/play_memoir_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해
+  acceptance_criteria 계약을 파생한다(하드코딩 금지). 브리프 AC 가 비면 계약 파생 불가 → FAIL.
+  결합 인과검증: narrativeBeatShown 은 "현재 챕터 전 슬롯이 placed 일 때만" true(placeItem 내 창발).
+  ★R2 확장(가산·brief_blob_sha 갱신·기존 AC1~5 비회귀): 4챕터 인생호(유년→학창→사회초년→현재=에필로그 장)·
+  carry-forward(choices[chapter-1] idempotent 누적·resolveEpilogue(choices) 순수·ch1·ch2 변주→상이 에필로그·
+  직접세팅 금지)·아이템 비네트(placeItem 성공→lastVignette per-item 상이·#vignette DOM textContent 렌더 소비)·
+  절차적 앰비언트 패드(_audio.js 가산 ambient·비게이트). 신규 계약 라인(carry/vignette)=load-bearing(부재 시 FAIL)·
+  init.totalChapters=4=게임↔brief drift 단언.
+  ★셋째 슬라이스(가산·brief_blob_sha 갱신·기존 AC1~8 비회귀): M-AC9 챕터별 다중트랙 앰비언트 모티프
+  (__ambientPlan(chapter) 순수·챕터 distinct·정적 코드→모티프 성부열·playAmbient 단일소스 소비·_audio.js
+  앰비언트 성부 카운터 voiceCalls.ambient[ctx 가드 앞·plan 소비 입증·melody/bass/perc 비간섭])·M-AC10
+  에필로그 패턴 코다(resolveEpilogue 가산·선택 패턴 함수·≤3 티어·위치무관·기존 4-위치 합성/M-AC7 distinct 보존).
+  신규 계약 라인(ambientMotif/epilogueCoda)=load-bearing(부재 시 FAIL). 신규 성부 0·코다 ≤3(bounded 천장).

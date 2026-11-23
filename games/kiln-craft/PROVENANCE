@@ -1,0 +1,26 @@
+# kiln-craft provenance marker — 이 게임은 아래 핸드오프 브리프로부터 구현됨.
+task_id: kiln-craft
+brief_blob_sha: 49b12732265d2f2cb0cc592d68405f733f36f17f   # `git hash-object vault/specs/kiln-craft.md`(내용 지문)
+brief_sha: PENDING_COMMIT   # 커밋 시점에 오케스트레이터가 brief commit sha 로 확정(게임 commit 선행·provenance 시계열)
+brief_repo: vault          # vault git tree(SR/renewal §5.3·메인 repo와 별도)
+AC_SOURCE: vault/specs/kiln-craft.md
+implemented_by: Claude Code (/all-in-one #3 B2 · #3 kiln-craft · 합의계획 .omc/plans/all-in-one-longlist-12.md §3)
+note: |
+  brief commit(vault, brief_sha)이 이 게임 commit 보다 선행한다(provenance 시계열·clicker/memoir/story-idle 규범).
+  QA(web/scripts/play_kiln-craft_check.mjs)는 AC_SOURCE 브리프를 parse_brief 로 파싱해 단언을 파생한다(하드코딩 금지).
+  단언 값(경제 계수 price=quality*3·rep=quality*1·명성 임계 thresholds=[10,30])은 브리프 acceptance_criteria 에서만
+  파생되며, 게임 코드 상수(window.__constants: PRICE_MULT·REP_MULT·REP_THRESHOLD)와 교차검증된다(드리프트 적발).
+  ★핵심 차별 루프(빈틈 직격): 동아시아 도예 공정의 순서 결합(빚기→굽기→유약)이 품질이고, 명성 경제가 창발한다 —
+  서구 대장장이/재단 클론과 가르는 유일선. 도예 1종(사케/차/서예 = Must-NOT).
+  ★AC2 [CORE] 공예 시퀀스 결합: __shape→__fire→__glaze 순서 준수 시에만 완성·각 단계가 quality 에 자기 몫
+  (SHAPE_Q/FIRE_Q/GLAZE_Q + 점토 base)을 가산(매 단계 delta>0·합 일치). 순서 위반/단계 누락 거부(piece 불변).
+  단일 'done 플래그'면 부분 시퀀스로 done 가능해야 하므로 RED(렌더-only theater 차단·anti-hollow 게이트).
+  ★AC3 판매 경제 창발: __sell() → coin+=price(quality) AND reputation+=rep(quality) 동시(둘 다 quality 순수 함수·
+  서로 다른 계수 → 단일 카운터 불가). 미완성 판매 거부(negative).
+  ★AC4 명성 게이트: reputation>=threshold[tier] 도달 시 tier 창발·monotonic·직접세팅(__setTier) 부재
+  (direct-set forbidden). tier-up 후 신규 작품 품질 > tier-up 전(상위재료 해금 falsifiable).
+  ★결정론: 턴제 공예(논리 액션)·wall-clock 비의존. 하네스가 게임 소스 gated 경로에 Date.now/performance.now/
+  requestAnimationFrame read 0 을 grep 으로 강제(§2.5). __resetGame() 으로 init 복원·런 간 잔존 0.
+  ★provenance 실증: 브리프 AC load-bearing 라인(init/craft/sell/tier/coupling/negative)이 비면 deriveContract
+  파생 불가 → FAIL. verify 가 정상 brief→PASS·coupling AC 제거 brief→FAIL 양 경로를 구동(brief-driven 무하드코딩
+  실증·done 게이트).

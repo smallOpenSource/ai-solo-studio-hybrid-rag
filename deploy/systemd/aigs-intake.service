@@ -1,0 +1,37 @@
+[Unit]
+Description=AIGS intake worker daemon (§15 Knowledge Intake · aigs:intake:queue 소비 → vault/research → capture_and_index(untrusted))
+Documentation=file:///opt/studio/orch/intake_worker.py
+# 부팅 순서: knowledge 뒤(ingest_files 가 capture_and_index→KnowledgeStore qdrant 검색 의존·soft ordering).
+After=one-man-corp-knowledge.service
+# 폭주 방지: 300초 내 5회 초과 재기동 시 systemd가 포기(failed) — 데몬 자체 종료성 가드와 2중.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/studio
+# intake conda env python 직접 exec(conda run 회피). 경로(vault/research·endpoint.yaml·.env)는
+# _PROJECT_ROOT 기준 절대해석 → CWD 무관 라이브와 동일 store/vault 결속. REDIS_ENABLED/Store 미설정
+# 시 데몬은 graceful 정상 종료(rc=0·503 아님·로그만).
+# ★ENV ACTION(§16 클래스): 라이브 색인엔 이 env 에 ``pypdf``(정규화·기보유) + ``qdrant_client`` +
+#   ``pyyaml``(KnowledgeStore·endpoint.yaml) 3종이 모두 필요. 현 intake env=pypdf 만 →
+#   qdrant_client/pyyaml 미설치 시 _build_knowledge_store 가 graceful no-op 종료(코드 100%·라이브는
+#   env 보강 ACTION). Drive 동기화(rclone OAuth·§16)도 별도 ACTION.
+ExecStart=/opt/conda/envs/intake/bin/python -m orch.intake_worker
+# ★도입 목적: 인입 큐 소비측 데몬(orphan 해소). 비정상 종료 시 자동 재기동. SIGTERM/SIGINT 정상신호는
+#   데몬이 라운드 경계서 graceful 종료(rc=0) → systemd success → 재기동 루프 없음.
+Restart=on-failure
+RestartSec=5
+# ★종료성 P0(이중): (1)데몬 내부 바운드 폴 루프 — rpop max_poll=100·라운드 간 분할 sleep·SIGTERM 즉시
+#   탈출(무한루프 0). (2)정지 시 cgroup SIGTERM → 데몬 _on_term 핸들러가 현 라운드 마치고 종료.
+#   30초 후 잔존분만 SIGKILL. ★pkill 미사용 — systemd가 이 서비스 cgroup 범위로만 신호(타 프로세스 불침해).
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# ── 자원 가드: cgroup-native 한도(이 서비스 cgroup 한정). 인입 워커는 PDF/CSV 정규화·bge 색인이라
+#    경량이나 안전 상한을 둔다. cgroup 위임 미설정 시 무효일 수 있음(자동재기동 주목적은 정상). ──
+MemoryHigh=4G
+MemoryMax=6G
+TasksMax=128
+
+[Install]
+WantedBy=default.target

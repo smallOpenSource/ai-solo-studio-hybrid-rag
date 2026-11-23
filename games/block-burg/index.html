@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>블록버그 — Block-Burg</title>
+<style>
+  html, body { margin: 0; background: #121821; color: #e4ecf2; font-family: monospace; touch-action: manipulation; }
+  /* 모바일: 화면폭 맞춤(종횡비 보존)·캔버스는 touch-action:none 으로 탭 소유(페이지 스크롤/줌 차단) */
+  #game { display: block; margin: 12px auto; max-width: 96vw; height: auto; background: #0b1018; border: 2px solid #ffba49; image-rendering: pixelated; touch-action: none; }
+  p { text-align: center; color: #8aa0b0; margin: 8px 16px; font-size: 13px; }
+  #controls { text-align: center; margin: 6px auto 18px; }
+  #rotate { font-family: monospace; font-size: 16px; color: #1a1208; background: #ffba49; border: none; border-radius: 6px; padding: 10px 22px; touch-action: manipulation; cursor: pointer; }
+  #mute { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 18px; background: #121821; color: #e4ecf2; border: 1px solid #ffba49; border-radius: 6px; padding: 6px 10px; touch-action: manipulation; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="mute" type="button" aria-label="음소거 토글">🔊</button>
+<canvas id="game" width="360" height="452"></canvas>
+<p>그리드 칸을 탭/클릭하면 현재 조각(구역)이 그 자리에 놓입니다. "회전"으로 방향을 바꾸세요. 조각을 인접 배치하면 도시가치가 창발합니다(턴제·낙하 없음).</p>
+<div id="controls"><button id="rotate" type="button">회전 ↻</button></div>
+<script src="../_audio.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ── 오디오(절차적 칩튠·_audio.js 공유·미로드 시 no-op 비차단·코어 미편집·기존 API 만) ──────
+  var A = window.GameAudio ? window.GameAudio({
+    master: 0.2, noteDur: 0.18,
+    bgm: [330, 440, 392, 494, 392, 587, 523, 440],            // E A G B · G D C A (도시 건설 분위기)
+    sfx: function (au) {
+      return {
+        place:  function () { au.chord([392, 523], 0.1, "square", 0.45, 70); },  // 조각 배치
+        rotate: function () { au.tone(523, 0.05, "triangle", 0.4); },             // 회전
+        reject: function () { au.tone(160, 0.08, "sawtooth", 0.35); },            // 거부(겹침/범위밖)
+      };
+    },
+  }) : { unlock: function () {}, play: function () {}, toggleMute: function () { return false; }, isUnlocked: function () { return false; } };
+
+  // ── 결정론 상수 (브리프 파생·window.__constants 로 drift 교차검증·wall-clock 비의존) ──────
+  // 계약 = vault/specs/block-burg.md(handoff 브리프 acceptance_criteria)와 1:1.
+  // state_shape: grid,queue,townValue,placed · init: placed=0 townValue=0 queueLen=8 width=8 height=8
+  var WIDTH = 8, HEIGHT = 8;               // brief init: width=8 height=8(그리드)
+  var QUEUE_LEN = 8;                       // brief init: queueLen=8(시드 고정 조각 큐)
+  var SEED = 12345;                        // 시드 고정(재현·결정론·slide 동형)·내부 상수
+  var BASE = 1;                            // brief synergy: base=1(점유 셀당 기본 가치)
+  var TYPES = ["R", "F", "K", "I"];        // 구역: R=주거 F=농장 K=공원 I=산업
+
+  // brief synergy: 인접 zone-type 쌍(정렬키)별 시너지(대칭). 전 쌍 비-0 → 인접이 항상 가치에 기여
+  //   (anti-hollow: 위치 의존성이 항상 falsifiable·단일 카운터 placed*const 불가). 키는 정렬 2글자.
+  var SYN = { FF: 1, FI: -1, FK: 2, FR: 3, II: 2, IK: -1, IR: -2, KK: 1, KR: 4, RR: 1 };
+
+  // 테트로미노 7종(상대 셀 offset [x,y]·회전 전). 큐는 시드 고정 RNG 로 shape+type 선택.
+  var SHAPES = [
+    [[0, 0], [1, 0], [2, 0], [3, 0]],     // I
+    [[0, 0], [1, 0], [0, 1], [1, 1]],     // O
+    [[0, 0], [1, 0], [2, 0], [1, 1]],     // T
+    [[0, 0], [0, 1], [0, 2], [1, 2]],     // L
+    [[1, 0], [1, 1], [1, 2], [0, 2]],     // J
+    [[1, 0], [2, 0], [0, 1], [1, 1]],     // S
+    [[0, 0], [1, 0], [1, 1], [2, 1]]      // Z
+  ];
+
+  // 시드 고정 PRNG(mulberry32·인라인·비결정 RNG 미사용 → 결정론·재현·slide/memoir 동형).
+  function makePRNG(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // 시드 고정 조각 큐: 각 항목 {id, type, cells(기본 shape)}. 동일 시드 → 동일 큐(재현).
+  function buildQueue() {
+    var rng = makePRNG(SEED);
+    var q = [];
+    for (var i = 0; i < QUEUE_LEN; i++) {
+      var shapeIdx = Math.floor(rng() * SHAPES.length);
+      var typeIdx = Math.floor(rng() * TYPES.length);
+      q.push({ id: i, type: TYPES[typeIdx], cells: SHAPES[shapeIdx].map(function (c) { return [c[0], c[1]]; }) });
+    }
+    return q;
+  }
+
+  function emptyGrid() {
+    var g = new Array(WIDTH * HEIGHT);
+    for (var i = 0; i < g.length; i++) g[i] = null;
+    return g;
+  }
+
+  var state = { grid: emptyGrid(), queue: buildQueue(), townValue: 0, placed: 0 };
+  var previewRot = 0;                      // UI 회전 미리보기(상태 아님·렌더 전용)
+
+  window.__state = state;                  // 테스트훅(헤드리스 상태 단언·R2 명명)
+  // brief↔게임 drift 교차검증(하드코딩 적발): 시너지/기본가치/구조 상수 노출.
+  window.__constants = { BASE: BASE, SYN: SYN, WIDTH: WIDTH, HEIGHT: HEIGHT, QUEUE_LEN: QUEUE_LEN, SEED: SEED, TYPES: TYPES.slice() };
+
+  // 정렬 2글자 키(시너지 대칭 조회).
+  function sortPair(a, b) { return a < b ? a + b : b + a; }
+
+  // ★도시가치 = board 인접의 순수 함수(direct-set forbidden). 점유 셀당 BASE +
+  //   직교 인접 점유쌍(오른/아래만 1회씩)의 시너지 합. 위치 의존(인접이 가치 창발).
+  function computeTownValue(g) {
+    var v = 0, x, y, i, t;
+    for (i = 0; i < g.length; i++) if (g[i]) v += BASE;
+    for (y = 0; y < HEIGHT; y++) {
+      for (x = 0; x < WIDTH; x++) {
+        i = y * WIDTH + x; t = g[i];
+        if (!t) continue;
+        if (x + 1 < WIDTH && g[i + 1]) v += SYN[sortPair(t, g[i + 1])];
+        if (y + 1 < HEIGHT && g[i + WIDTH]) v += SYN[sortPair(t, g[i + WIDTH])];
+      }
+    }
+    return v;
+  }
+
+  // 조각 절대 셀 = shape 회전(rot 90°·정규화) + 평행이동(x,y). pieceId 무효면 null(범위/겹침 미검).
+  function pieceCells(pieceId, x, y, rot) {
+    if (pieceId < 0 || pieceId >= state.queue.length) return null;
+    var cells = state.queue[pieceId].cells.map(function (c) { return [c[0], c[1]]; });
+    var r, k;
+    for (r = 0; r < (rot & 3); r++) {                       // 90° CW: (cx,cy)->(cy,-cx)
+      for (k = 0; k < cells.length; k++) { var cx = cells[k][0], cy = cells[k][1]; cells[k] = [cy, -cx]; }
+    }
+    var minx = Infinity, miny = Infinity;                   // 정규화(min 0)
+    for (k = 0; k < cells.length; k++) { if (cells[k][0] < minx) minx = cells[k][0]; if (cells[k][1] < miny) miny = cells[k][1]; }
+    for (k = 0; k < cells.length; k++) cells[k] = [cells[k][0] - minx + x, cells[k][1] - miny + y];
+    return cells;
+  }
+
+  // 합법 배치인가(현재 grid 기준): 차례 일치 + 큐 잔여 + 전 셀 범위내 + 무겹침. 부작용 0(read-only).
+  function canPlace(pieceId, x, y, rot) {
+    if (state.placed >= state.queue.length) return false;   // 큐 소진
+    if (pieceId !== state.placed) return false;             // 차례 아님(턴제 큐 순서)
+    var cells = pieceCells(pieceId, x, y, rot);
+    if (!cells) return false;
+    for (var k = 0; k < cells.length; k++) {
+      var cx = cells[k][0], cy = cells[k][1];
+      if (cx < 0 || cx >= WIDTH || cy < 0 || cy >= HEIGHT) return false;   // 범위밖
+      if (state.grid[cy * WIDTH + cx]) return false;                       // 겹침
+    }
+    return true;
+  }
+
+  // ★[CORE] 배치 결합(AC2): 셀 스탬프 AND townValue = computeTownValue(board) 재계산(창발·direct-set 아님).
+  //   겹침/범위밖/차례아님 거부(negative·상태 불변). 성공 시 placed+=1·큐 전진(턴제·낙하 없음).
+  function placePiece(pieceId, x, y, rot) {
+    if (!canPlace(pieceId, x, y, rot)) { A.play("reject"); return false; }
+    var cells = pieceCells(pieceId, x, y, rot);
+    var type = state.queue[pieceId].type;
+    for (var k = 0; k < cells.length; k++) state.grid[cells[k][1] * WIDTH + cells[k][0]] = type;
+    state.placed += 1;
+    state.townValue = computeTownValue(state.grid);         // 인접 순수함수 재계산(단일 카운터 불가)
+    previewRot = 0;
+    A.play("place");
+    render();
+    return true;
+  }
+
+  function resetGame() {                    // AC: resetGame — init 복원(같은 state 객체 변이·훅 참조 보전)
+    state.grid = emptyGrid();
+    state.queue = buildQueue();             // 시드 고정 → 동일 큐 재생성(재현)
+    state.townValue = 0;
+    state.placed = 0;
+    previewRot = 0;
+    render();
+  }
+
+  // 헤드리스 테스트 API — Canvas 실입력과 **동일 로직**(QA가 page.evaluate 로 구동·우회 아님).
+  window.__placePiece = placePiece;        // [CORE] 배치 훅(pieceId,x,y,rot)
+  window.__pieceCells = pieceCells;         // 조각 절대 셀(QA 결정론 배치 탐색용·read-only)
+  window.__canPlace = canPlace;             // 합법 배치 판정(QA 위치 스캔용·read-only)
+  window.__resetGame = resetGame;
+
+  // ── 입력: Canvas 탭(현재 조각 배치) + 회전 버튼 (★wall-clock 0·낙하 타이머/rAF 없음·턴제) ──
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var CELL = 40, OX = 20, OY = 92;          // 그리드 8×40=320·상단 HUD 92px
+
+  // Pointer Events = 마우스·펜·터치 단일 경로. ★CSS 스케일 보정: 캔버스가 max-width 로 축소되면
+  // rect.width≠canvas.width → (client-rect)에 비율(canvas/rect)을 곱해야 내부 좌표가 맞다(clicker 동형).
+  canvas.addEventListener("pointerdown", function (e) {
+    A.unlock();                                             // 첫 제스처서 오디오 unlock(autoplay 정책)
+    var rect = canvas.getBoundingClientRect();
+    var sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+    var px = (e.clientX - rect.left) * sx, py = (e.clientY - rect.top) * sy;
+    var cx = Math.floor((px - OX) / CELL), cy = Math.floor((py - OY) / CELL);
+    if (cx >= 0 && cx < WIDTH && cy >= 0 && cy < HEIGHT) placePiece(state.placed, cx, cy, previewRot);
+  });
+
+  var rotBtn = document.getElementById("rotate");
+  if (rotBtn) rotBtn.addEventListener("click", function () { A.unlock(); previewRot = (previewRot + 1) & 3; A.play("rotate"); render(); });
+
+  var COLOR = { R: "#6c7bff", F: "#4fd6a0", K: "#7bd44f", I: "#d4a04f" };
+  var LABEL = { R: "주거", F: "농장", K: "공원", I: "산업" };
+
+  function render() {
+    ctx.fillStyle = "#0b1018"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // HUD: 도시가치 + 배치 수 + 현재 조각
+    ctx.fillStyle = "#e4ecf2"; ctx.font = "16px monospace";
+    ctx.fillText("도시가치(townValue): " + state.townValue, 16, 28);
+    ctx.fillText("배치(placed): " + state.placed + "/" + QUEUE_LEN, 16, 50);
+
+    var head = state.queue[state.placed];
+    ctx.font = "13px monospace"; ctx.fillStyle = "#ffba49";
+    if (head) {
+      ctx.fillText("현재 조각: " + LABEL[head.type] + " (회전 " + previewRot + ")", 16, 74);
+      // 현재 조각 미리보기(우상단 미니)
+      var pc = pieceCells(state.placed, 0, 0, previewRot);
+      if (pc) {
+        ctx.fillStyle = COLOR[head.type];
+        for (var p = 0; p < pc.length; p++) ctx.fillRect(canvas.width - 70 + pc[p][0] * 10, 12 + pc[p][1] * 10, 9, 9);
+      }
+    } else {
+      ctx.fillText("큐 소진 — 도시 완성", 16, 74);
+    }
+
+    // 그리드 + 배치된 구역
+    for (var y = 0; y < HEIGHT; y++) {
+      for (var x = 0; x < WIDTH; x++) {
+        var gx = OX + x * CELL, gy = OY + y * CELL, t = state.grid[y * WIDTH + x];
+        ctx.fillStyle = t ? COLOR[t] : "#152030";
+        ctx.fillRect(gx + 1, gy + 1, CELL - 2, CELL - 2);
+        if (t) {
+          ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fillRect(gx + 1, gy + 1, CELL - 2, 6);
+          ctx.fillStyle = "#10131a"; ctx.font = "11px monospace"; ctx.fillText(t, gx + 15, gy + 25);
+        }
+      }
+    }
+  }
+
+  render();
+
+  // 뮤트 버튼: 첫 탭=사운드 켜기(unlock)·이후=뮤트 토글(clicker 동형).
+  var muteBtn = document.getElementById("mute");
+  if (muteBtn) muteBtn.addEventListener("click", function () {
+    if (!A.isUnlocked()) A.unlock();
+    else muteBtn.textContent = A.toggleMute() ? "🔇" : "🔊";
+  });
+})();
+</script>
+</body>
+</html>

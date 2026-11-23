@@ -1,0 +1,1 @@
+계속해서 런타임이 소비할 무기 데이터를 읽어라. game_data_read 도구를 호출하되 path는 "data/weapons.json", required는 true로 설정해라(밸런스 단계 미완 시 명시 실패 — 단계간 계약).

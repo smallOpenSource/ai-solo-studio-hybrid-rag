@@ -1,0 +1,33 @@
+[Unit]
+Description=one_man_corp P1 worker-pool supervisor (concurrency:N multi-process worker pool)
+Documentation=file:///opt/studio/scripts/serve_supervisor.sh
+# 부팅 순서: knowledge·web 뒤에 기동(워커가 RAG 검색·웹 게이트웨이 콜백 의존·soft ordering·하드 의존 아님).
+After=one-man-corp-knowledge.service one-man-corp-web.service
+# 폭주 방지: 300초 내 5회 초과 재기동 시 systemd가 포기(failed) — supervisor 자체 crash-loop 상한과 2중.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/studio
+# conda env python 직접 exec(conda run 회피·제약#3). endpoint.yaml worker.concurrency(현=2)를 추종.
+# 경로(state/supervisor.lock·worker.lock.{slot}·office.db·.env)는 supervisor가 _PROJECT_ROOT
+# 기준 절대경로로 해석 → CWD 무관하게 라이브와 동일 DB/락에 결속(이중풀 위험 0).
+ExecStart=/opt/conda/envs/one_man_corp-engine/bin/python -m office.supervisor
+# ★도입 목적(SPOF 제거): supervisor가 비정상 종료(전 슬롯 crash-loop→비-0 exit·SIGKILL 등)하면
+#   자동 재기동. SIGTERM/SIGINT 등 정상 종료신호는 systemd가 success로 간주 → stop 시 재기동 루프 없음.
+Restart=on-failure
+RestartSec=5
+# 정지 시 cgroup 전체에 SIGTERM(기본 KillMode=control-group) → 슬롯 워커가 각자 '현재 tick 마치고
+# 종료' graceful 핸들러 수행(worker.py). supervisor도 SIGTERM 수신. 90초 후 잔존분만 SIGKILL.
+# ★pkill 미사용 — systemd가 이 서비스 cgroup 범위로만 신호(타 프로세스 불침해).
+TimeoutStopSec=90
+# ── 자원 가드: start_guard.sh 워치독(claude-트리 결합이라 systemd 부적합)을 cgroup-native 한도로
+#    대체. 동일 임계(SOFT 10GB·HARD 16GB·PROC 250)·이 서비스 cgroup 한정. cgroup 위임 미설정 시
+#    무효일 수 있음(아래 verify로 확인) — 무효여도 자동재기동(주목적)은 정상 동작. ──
+MemoryHigh=9500M
+MemoryMax=15G
+TasksMax=250
+
+[Install]
+WantedBy=default.target
